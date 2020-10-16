@@ -246,7 +246,6 @@ class Env:
             actions.
         :return: observations after taking action in environment.
         """
-
         assert (
             self._episode_start_time is not None
         ), "Cannot call step before calling reset"
@@ -259,7 +258,7 @@ class Env:
             action = {"action": action}
 
         observations = self.task.step(
-            action=action, episode=self.current_episode
+            action=action, episode=self.current_episode, **kwargs
         )
 
         self._task.measurements.update_measures(

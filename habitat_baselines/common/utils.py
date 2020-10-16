@@ -23,7 +23,8 @@ from habitat_baselines.common.tensorboard_utils import TensorboardWriter
 
 class Flatten(nn.Module):
     def forward(self, x):
-        return x.view(x.size(0), -1)
+        # return x.view(x.size(0), -1)
+        return x.reshape(x.size(0), -1)
 
 
 class CustomFixedCategorical(torch.distributions.Categorical):
@@ -43,19 +44,67 @@ class CustomFixedCategorical(torch.distributions.Categorical):
         return self.probs.argmax(dim=-1, keepdim=True)
 
 
+# class CategoricalNet(nn.Module):
+#     def __init__(self, num_inputs, num_outputs):
+#         super().__init__()
+
+#         self.linear = nn.Linear(num_inputs, num_outputs)
+
+#         nn.init.orthogonal_(self.linear.weight, gain=0.01)
+#         nn.init.constant_(self.linear.bias, 0)
+
+#     def forward(self, x):
+#         x = self.linear(x)
+#         return CustomFixedCategorical(logits=x)
+
 class CategoricalNet(nn.Module):
     def __init__(self, num_inputs, num_outputs):
         super().__init__()
 
-        self.linear = nn.Linear(num_inputs, num_outputs)
+        self.mu  = nn.Linear(num_inputs, num_outputs)
+        self.std = nn.Linear(num_inputs, num_outputs)
 
-        nn.init.orthogonal_(self.linear.weight, gain=0.01)
-        nn.init.constant_(self.linear.bias, 0)
+        nn.init.orthogonal_(self.mu.weight, gain=0.01)
+        nn.init.constant_(self.mu.bias, 0)
+        nn.init.orthogonal_(self.std.weight, gain=0.01)
+        nn.init.constant_(self.std.bias, 0)
 
     def forward(self, x):
-        x = self.linear(x)
-        return CustomFixedCategorical(logits=x)
+        mu = self.mu(x)
+        std = self.std(x)
+        std = torch.clamp(std, min=1e-6, max=1)
+        return CustomNormal(mu, std)
 
+# class CategoricalNet(nn.Module):
+#     def __init__(self, num_inputs, num_outputs):
+#         super().__init__()
+
+#         self.mu  = nn.Linear(num_inputs, num_outputs)
+
+#         nn.init.orthogonal_(self.mu.weight, gain=0.01)
+#         nn.init.constant_(self.mu.bias, 0)
+
+#     def forward(self, x):
+#         mu = self.mu(x)
+#         std = torch.ones(mu.shape)*0.5
+#         return CustomNormal(mu, std.cuda())
+
+class CustomNormal(torch.distributions.normal.Normal):
+    def sample(self, sample_shape=torch.Size()):
+        return super().rsample(sample_shape).unsqueeze(-1)
+
+    def log_probs(self, actions):
+        ret = (
+            super()
+            .log_prob(actions.squeeze(-1))
+            .view(actions.size(0), -1)
+            .sum(-1)
+            .unsqueeze(-1)
+        )
+        return ret
+
+    def mode(self):
+        return self.mean
 
 class ResizeCenterCropper(nn.Module):
     def __init__(self, size, channels_last: bool = False):

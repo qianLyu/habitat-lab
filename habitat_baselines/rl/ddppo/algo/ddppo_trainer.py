@@ -67,19 +67,33 @@ class DDPPOTrainer(PPOTrainer):
         Returns:
             None
         """
+        from gym.spaces import Dict, Box
+        depth_256_space = Dict({'depth': Box(low=0., high=1., shape=(256,256,1)), 'pointgoal_with_gps_compass': self.envs.observation_spaces[0].spaces['pointgoal_with_gps_compass']})
         logger.add_filehandler(self.config.LOG_FILE)
-
         self.actor_critic = PointNavResNetPolicy(
-            observation_space=self.envs.observation_spaces[0],
+            observation_space=depth_256_space,
             action_space=self.envs.action_spaces[0],
             hidden_size=ppo_cfg.hidden_size,
             rnn_type=self.config.RL.DDPPO.rnn_type,
             num_recurrent_layers=self.config.RL.DDPPO.num_recurrent_layers,
             backbone=self.config.RL.DDPPO.backbone,
-            normalize_visual_inputs="rgb"
-            in self.envs.observation_spaces[0].spaces,
+            normalize_visual_inputs=False,
+            # normalize_visual_inputs="rgb"
+            # in self.envs.observation_spaces[0].spaces,
         )
         self.actor_critic.to(self.device)
+
+        pretrained_state = torch.load(
+            'data/gibson-2plus-resnet50.pth', map_location="cpu"
+        )
+        prefix = "actor_critic.net.visual_encoder."
+        self.actor_critic.net.visual_encoder.load_state_dict(
+            {
+                k[len(prefix) :]: v
+                for k, v in pretrained_state["state_dict"].items()
+                if k.startswith(prefix)
+            }
+        )
 
         if (
             self.config.RL.DDPPO.pretrained_encoder

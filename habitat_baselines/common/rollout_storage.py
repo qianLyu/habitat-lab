@@ -44,16 +44,18 @@ class RolloutStorage:
         self.returns = torch.zeros(num_steps + 1, num_envs, 1)
 
         self.action_log_probs = torch.zeros(num_steps, num_envs, 1)
+        print('action space: ', action_space)
         if action_space.__class__.__name__ == "ActionSpace":
-            action_shape = 1
+            action_shape = 2
+            # action_shape = 1
         else:
             action_shape = action_space.shape[0]
 
         self.actions = torch.zeros(num_steps, num_envs, action_shape)
         self.prev_actions = torch.zeros(num_steps + 1, num_envs, action_shape)
-        if action_space.__class__.__name__ == "ActionSpace":
-            self.actions = self.actions.long()
-            self.prev_actions = self.prev_actions.long()
+        # if action_space.__class__.__name__ == "ActionSpace":
+        #     self.actions = self.actions.long()
+        #     self.prev_actions = self.prev_actions.long()
 
         self.masks = torch.zeros(num_steps + 1, num_envs, 1)
 

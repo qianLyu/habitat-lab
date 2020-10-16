@@ -28,7 +28,195 @@ from habitat_baselines.common.utils import (
     linear_decay,
 )
 from habitat_baselines.rl.ppo import PPO, PointNavBaselinePolicy
+from habitat_baselines.rl.ddppo.policy.resnet_policy import (
+    PointNavResNetPolicy,
+)
+# [NAOKI]
+from habitat.sims.habitat_simulator.actions import (
+    HabitatSimActions,
+    HabitatSimV1ActionSpaceConfiguration,
+)
+from habitat.tasks.nav.nav import SimulatorTaskAction
+import habitat_sim
+import habitat
 
+HabitatSimActions.extend_action_space("CONT_MOVE")
+HabitatSimActions.extend_action_space("CONT_TURN")
+
+import attr
+@attr.s(auto_attribs=True, slots=True)
+class ContCtrlActuationSpec:
+    pass
+
+@habitat_sim.registry.register_move_fn(body_action=True)
+class NothingAction(habitat_sim.SceneNodeControl):
+    def __call__(
+        self,
+        scene_node: habitat_sim.SceneNode,
+        actuation_spec: ContCtrlActuationSpec,
+    ):
+        pass
+
+@habitat.registry.register_action_space_configuration
+# class NaokiActionSpace(HabitatSimV1ActionSpaceConfiguration):
+class ContCtrlSpace(HabitatSimV1ActionSpaceConfiguration):
+    def get(self):
+        return {
+            HabitatSimActions.CONT_MOVE: habitat_sim.ActionSpec("nothing_action"),
+            HabitatSimActions.CONT_TURN: habitat_sim.ActionSpec("nothing_action"),
+        }
+import math
+@habitat.registry.register_task_action
+class ContMove(SimulatorTaskAction):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Icky, but apparently necessary...
+        self._robo_id_1 = 0
+
+    def _get_uuid(self, *args, **kwargs) -> str:
+        return "cont_move"
+
+    def reset(self, task, *args: Any, **kwargs: Any):
+        task.is_stop_called = False
+        if not self._sim._sim.get_existing_object_ids():
+            self._sim._sim.config.sim_cfg.allow_sliding = True
+            obj_templates_mgr = self._sim._sim.get_object_template_manager()
+            locobot_template_id = obj_templates_mgr.load_object_configs('/nethome/nyokoyama3/habitat-sim/data/objects/locobot_merged')[0]
+            self._robo_id_1 = self._sim._sim.add_object(locobot_template_id, self._sim._sim.agents[0].scene_node)
+            self._sim._sim.set_object_motion_type(habitat_sim.physics.MotionType.KINEMATIC, 0)
+
+    def step(self, task, *args, **kwargs):
+        # print('move args', args)
+        # print('move kwargs', kwargs)
+        # time_step = 1/60.
+        # time_step = 1/30.
+        time_step = 1.
+
+        move_amount = torch.tanh(kwargs['move']).item()
+        turn_amount = torch.tanh(kwargs['turn']).item()
+
+        # distance_to_target = task.measurements.measures['distance_to_goal'].get_metric()
+        # if distance_to_target < 0.2:
+        #     task.is_stop_called = True    
+        # print('distance_to_target',distance_to_target)
+
+        # Scale actions
+        # move_amount *= 0.5
+        # turn_amount *= np.pi/2.0
+        # move_amount *= (0.5)*6
+        # turn_amount *= (np.pi)*6
+        # move_amount *= 0.25
+        # move_amount = max(move_amount,-0.5)*0.25
+        move_amount = (move_amount-1.)/2.*0.25
+        turn_amount *= np.pi/18.0
+        self._sim._sim.config.sim_cfg.allow_sliding = True
+
+        if abs(move_amount) < 0.1*0.25 and abs(turn_amount) < 0.1*np.pi/18.0:
+            task.is_stop_called = True
+        
+        vel_control = habitat_sim.physics.VelocityControl()
+        vel_control.controlling_lin_vel = True
+        vel_control.controlling_ang_vel = True
+        vel_control.lin_vel_is_local = True
+        vel_control.ang_vel_is_local = True
+        vel_control.linear_velocity = np.array([0.0, 0.0, move_amount])
+        vel_control.angular_velocity = np.array([0.0, turn_amount, 0])
+
+        # New code start
+        previous_rigid_state = self._sim._sim.get_rigid_state(self._robo_id_1)
+        # manually integrate the rigid state
+        target_rigid_state = vel_control.integrate_transform(
+            time_step, previous_rigid_state
+        )
+
+        # snap rigid state to navmesh and set state to object/agent
+        end_pos = self._sim._sim.step_filter(
+            previous_rigid_state.translation, target_rigid_state.translation
+        )
+        self._sim._sim.set_translation(end_pos, self._robo_id_1)
+        self._sim._sim.set_rotation(target_rigid_state.rotation, self._robo_id_1)
+
+        # Check if a collision occured
+        dist_moved_before_filter = (
+            target_rigid_state.translation - previous_rigid_state.translation
+        ).dot()
+        dist_moved_after_filter = (end_pos - previous_rigid_state.translation).dot()
+
+        # NB: There are some cases where ||filter_end - end_pos|| > 0 when a
+        # collision _didn't_ happen. One such case is going up stairs.  Instead,
+        # we check to see if the the amount moved after the application of the filter
+        # is _less_ than the amount moved before the application of the filter
+        EPS = 1e-5
+        collided = (dist_moved_after_filter + EPS) < dist_moved_before_filter
+        # New code end
+
+        
+        ret = self._sim._sim.step_physics(time_step)
+        return self._sim.step(HabitatSimActions.CONT_MOVE)
+
+@habitat.registry.register_task_action
+class ContTurn(SimulatorTaskAction):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._sim._sim.config.sim_cfg.allow_sliding = False
+        obj_templates_mgr = self._sim._sim.get_object_template_manager()
+        locobot_template_id = obj_templates_mgr.load_object_configs('/nethome/nyokoyama3/habitat-sim/data/objects/locobot_merged')[0]
+        self._robo_id_1 = self._sim._sim.add_object(locobot_template_id, self._sim._sim.agents[0].scene_node)
+        self._robo_id_1 = 0
+        self._sim._sim.set_object_motion_type(habitat_sim.physics.MotionType.KINEMATIC, 0)
+
+    def _get_uuid(self, *args, **kwargs) -> str:
+        return "cont_turn"
+
+    def step(self, *args, **kwargs):
+        print('turn args', args)
+        print('turn kwargs', kwargs)
+        time_step = 1./60.
+        # vel_control = self._sim._sim.get_object_velocity_control(0)
+        vel_control = habitat_sim.physics.VelocityControl()
+        vel_control.controlling_lin_vel = True
+        vel_control.controlling_ang_vel = True
+        vel_control.lin_vel_is_local = True
+        vel_control.ang_vel_is_local = True
+        vel_control.linear_velocity = np.array([0.0, 0.0, 0.0])
+        vel_control.angular_velocity = np.array([0.0, (np.pi/18)/(time_step), 0])
+
+        # New code start
+        previous_rigid_state = self._sim._sim.get_rigid_state(self._robo_id_1)
+        # manually integrate the rigid state
+        target_rigid_state = vel_control.integrate_transform(
+            time_step, previous_rigid_state
+        )
+
+        # snap rigid state to navmesh and set state to object/agent
+        end_pos = self._sim._sim.step_filter(
+            previous_rigid_state.translation, target_rigid_state.translation
+        )
+        self._sim._sim.set_translation(end_pos, self._robo_id_1)
+        self._sim._sim.set_rotation(target_rigid_state.rotation, self._robo_id_1)
+
+        # Check if a collision occured
+        dist_moved_before_filter = (
+            target_rigid_state.translation - previous_rigid_state.translation
+        ).dot()
+        dist_moved_after_filter = (end_pos - previous_rigid_state.translation).dot()
+
+        # NB: There are some cases where ||filter_end - end_pos|| > 0 when a
+        # collision _didn't_ happen. One such case is going up stairs.  Instead,
+        # we check to see if the the amount moved after the application of the filter
+        # is _less_ than the amount moved before the application of the filter
+        EPS = 1e-5
+        collided = (dist_moved_after_filter + EPS) < dist_moved_before_filter
+        # New code end
+
+        ret = self._sim._sim.step_physics(time_step)
+        # vel_control.angular_velocity = np.array([0.0, 0.0, 0.0])
+        # ret = self._sim._sim.step_physics(time_step)
+        return self._sim.step(HabitatSimActions.CONT_TURN)
+
+# [/NAOKI]
 
 @baseline_registry.register_trainer(name="ppo")
 class PPOTrainer(BaseRLTrainer):
@@ -48,6 +236,15 @@ class PPOTrainer(BaseRLTrainer):
         self._static_encoder = False
         self._encoder = None
 
+        config.defrost()
+        config.TASK_CONFIG.TASK.ACTIONS.CONT_MOVE = habitat.config.Config()
+        config.TASK_CONFIG.TASK.ACTIONS.CONT_MOVE.TYPE = "ContMove"
+        config.TASK_CONFIG.TASK.ACTIONS.CONT_TURN = habitat.config.Config()
+        config.TASK_CONFIG.TASK.ACTIONS.CONT_TURN.TYPE = "ContTurn"
+        config.TASK_CONFIG.SIMULATOR.ACTION_SPACE_CONFIG = "ContCtrlSpace"
+        config.TASK_CONFIG.TASK.POSSIBLE_ACTIONS = ['CONT_MOVE','CONT_TURN']
+        config.freeze()
+
     def _setup_actor_critic_agent(self, ppo_cfg: Config) -> None:
         r"""Sets up actor critic and agent for PPO.
 
@@ -59,12 +256,34 @@ class PPOTrainer(BaseRLTrainer):
         """
         logger.add_filehandler(self.config.LOG_FILE)
 
-        self.actor_critic = PointNavBaselinePolicy(
+        # self.actor_critic = PointNavBaselinePolicy(
+        #     observation_space=self.envs.observation_spaces[0],
+        #     action_space=self.envs.action_spaces[0],
+        #     hidden_size=ppo_cfg.hidden_size,
+        # )
+        self.actor_critic = PointNavResNetPolicy(
             observation_space=self.envs.observation_spaces[0],
             action_space=self.envs.action_spaces[0],
             hidden_size=ppo_cfg.hidden_size,
+            rnn_type=self.config.RL.DDPPO.rnn_type,
+            num_recurrent_layers=self.config.RL.DDPPO.num_recurrent_layers,
+            backbone=self.config.RL.DDPPO.backbone,
+            normalize_visual_inputs="rgb"
+            in self.envs.observation_spaces[0].spaces,
         )
         self.actor_critic.to(self.device)
+
+        pretrained_state = torch.load(
+            'data/gibson-2plus-resnet50.pth', map_location="cpu"
+        )
+        prefix = "actor_critic.net.visual_encoder."
+        self.actor_critic.net.visual_encoder.load_state_dict(
+            {
+                k[len(prefix) :]: v
+                for k, v in pretrained_state["state_dict"].items()
+                if k.startswith(prefix)
+            }
+        )
 
         self.agent = PPO(
             actor_critic=self.actor_critic,
@@ -183,7 +402,19 @@ class PPOTrainer(BaseRLTrainer):
 
         t_step_env = time.time()
 
-        outputs = self.envs.step([a[0].item() for a in actions])
+        actions = actions.reshape([self.envs.num_envs,2])
+        def convert_action(a):
+            action_dict =  {
+                'action': 'CONT_MOVE',
+                'action_args': {
+                    'move': a[0],
+                    'turn': a[1],
+                    }
+                }
+            return action_dict
+        step_actions = list(map(convert_action, actions))
+        # outputs = self.envs.step([a[0].item() for a in actions])
+        outputs = self.envs.step(step_actions)
         observations, rewards, dones, infos = [list(x) for x in zip(*outputs)]
 
         env_time += time.time() - t_step_env
@@ -230,12 +461,15 @@ class PPOTrainer(BaseRLTrainer):
             rewards,
             masks,
         )
+        # print('rollouts.recurrent_hidden_states am i 0',rollouts.recurrent_hidden_states)
+
 
         pth_time += time.time() - t_update_stats
 
         return pth_time, env_time, self.envs.num_envs
 
     def _update_agent(self, ppo_cfg, rollouts):
+        # print('rollouts.recurrent_hidden_states',rollouts.recurrent_hidden_states)
         t_update_model = time.time()
         with torch.no_grad():
             last_observation = {
@@ -253,7 +487,6 @@ class PPOTrainer(BaseRLTrainer):
         )
 
         value_loss, action_loss, dist_entropy = self.agent.update(rollouts)
-
         rollouts.after_update()
 
         return (
@@ -295,6 +528,7 @@ class PPOTrainer(BaseRLTrainer):
             self.envs.observation_spaces[0],
             self.envs.action_spaces[0],
             ppo_cfg.hidden_size,
+            num_recurrent_layers=self.actor_critic.net.num_recurrent_layers,
         )
         rollouts.to(self.device)
 
@@ -447,6 +681,7 @@ class PPOTrainer(BaseRLTrainer):
         Returns:
             None
         """
+
         # Map location CPU is almost always better than mapping to a CUDA device.
         ckpt_dict = self.load_checkpoint(checkpoint_path, map_location="cpu")
 
@@ -488,7 +723,7 @@ class PPOTrainer(BaseRLTrainer):
             device=self.device,
         )
         prev_actions = torch.zeros(
-            self.config.NUM_PROCESSES, 1, device=self.device, dtype=torch.long
+            self.config.NUM_PROCESSES, 2, device=self.device, dtype=torch.long
         )
         not_done_masks = torch.zeros(
             self.config.NUM_PROCESSES, 1, device=self.device
@@ -533,13 +768,27 @@ class PPOTrainer(BaseRLTrainer):
                     test_recurrent_hidden_states,
                     prev_actions,
                     not_done_masks,
-                    deterministic=False,
+                    deterministic=True,
                 )
 
+                actions = actions.reshape([self.envs.num_envs,2])
                 prev_actions.copy_(actions)
 
-            outputs = self.envs.step([a[0].item() for a in actions])
+            # [NAOKI]
+            def convert_action(a):
+                action_dict =  {
+                    'action': 'CONT_MOVE',
+                    'action_args': {
+                        'move': a[0],
+                        'turn': a[1],
+                        }
+                    }
+                return action_dict
+            step_actions = list(map(convert_action, actions))
+            outputs = self.envs.step(step_actions)
+            # /[NAOKI]
 
+            # outputs = self.envs.step([a[0].item() for a in actions])
             observations, rewards, dones, infos = [
                 list(x) for x in zip(*outputs)
             ]
@@ -592,7 +841,6 @@ class PPOTrainer(BaseRLTrainer):
                             metrics=self._extract_scalars_from_info(infos[i]),
                             tb_writer=writer,
                         )
-
                         rgb_frames[i] = []
 
                 # episode continues

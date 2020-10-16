@@ -1,0 +1,84 @@
+BASE_TASK_CONFIG_PATH: "/nethome/nyokoyama3/n/aug26/habitat-lab/configs/tasks/pointnav_gibson.yaml"
+# BASE_TASK_CONFIG_PATH: "/nethome/nyokoyama3/n/aug26/habitat-lab/configs/tasks/pointnav_gibson_only_4_episodes.yaml"
+TRAINER_NAME: "ddppo"
+ENV_NAME: "NavRLEnv"
+SIMULATOR_GPU_ID: 0
+TORCH_GPU_ID: 0
+VIDEO_OPTION: ['disk']
+TENSORBOARD_DIR: "cont_ctrl_results/v1_4/tb"
+VIDEO_DIR: "cont_ctrl_results/v1_4/video_dir"
+TEST_EPISODE_COUNT: 20
+EVAL_CKPT_PATH_DIR: "cont_ctrl_results/v1_4/checkpoints_0"
+NUM_PROCESSES: 3
+SENSORS: ["DEPTH_SENSOR"]
+CHECKPOINT_FOLDER: "cont_ctrl_results/v1_4/checkpoints"
+NUM_UPDATES: 1000000000
+LOG_INTERVAL: 10
+CHECKPOINT_INTERVAL: 250
+
+# v0_3: Same as v0_2, but with infinite bounds for action space and continuous stop (both < 0.05)
+# v0_4: Same as v0_2, but with infinite bounds for action space
+# v0_5: Same as v0_4, but with auto stop built in to the step function (nav.py is orig)
+# v0_6: Same as v0_4.
+# v0_7: Same as v0_6, but with NO STOPPING ALLOWED
+# v0_8: Same as v0_6, FIXED STD, ORIGINAL NAVPY, AUTO-STOP in STEP function (<0.2)
+# v0_9: Same as v0_6, ORIGINAL NAVPY, STOP_RESET FIX, 10x speed, AUTO-STOP in STEP function (<0.2)
+# v0_10: Same as v0_9, Stop is done by agent if both actions are < 0.1
+# v0_11: Training on Denmark, 6x speed.
+# v0_12: Training on all data, 6x speed.
+# v0_13: Training on all data, 6x speed, Nicut.json.gz removed.
+# v0_14: Training on all data, 6x speed, Nicut.json.gz and Colebrook removed.
+#15ham
+#16roane
+#17goffs
+#18dryville
+#19 only nicut
+
+#v1_1: 30fps, 1500 steps, 0.5 m/s + 90 deg/s, object_id fix
+#v1_3 apple to apples: 500 steps, speed is 0.25 m/0.3s
+#v1_4 above but with sliding false
+
+RL:
+  SUCCESS_REWARD: 2.5
+  PPO:
+    # ppo params
+    clip_param: 0.2
+    ppo_epoch: 2
+    num_mini_batch: 2
+    value_loss_coef: 0.5
+    entropy_coef: 0.01
+    lr: 2.5e-4
+    eps: 1e-5
+    max_grad_norm: 0.2
+    # num_steps: 128
+    num_steps: 96
+    use_gae: True
+    gamma: 0.99
+    tau: 0.95
+    use_linear_clip_decay: False
+    use_linear_lr_decay: False
+    reward_window_size: 50
+
+    use_normalized_advantage: False
+
+    hidden_size: 512
+
+  DDPPO:
+    sync_frac: 0.6
+    # The PyTorch distributed backend to use
+    distrib_backend: GLOO
+    # Visual encoder backbone
+    pretrained_weights: data/ddppo-models/gibson-2plus-resnet50.pth
+    # Initialize with pretrained weights
+    pretrained: False
+    # Initialize just the visual encoder backbone with pretrained weights
+    pretrained_encoder: False
+    # Whether or not the visual encoder backbone will be trained.
+    train_encoder: True
+    # Whether or not to reset the critic linear layer
+    reset_critic: True
+
+    # Model parameters
+    backbone: resnet50
+    rnn_type: LSTM
+    num_recurrent_layers: 2
