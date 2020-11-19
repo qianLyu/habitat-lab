@@ -402,7 +402,7 @@ class PPOTrainer(BaseRLTrainer):
 
         t_step_env = time.time()
 
-        actions = actions.reshape([self.envs.num_envs,2])
+        actions = actions.reshape([self.envs.num_envs,2]).to(device="cpu")
         def convert_action(a):
             action_dict =  {
                 'action': 'CONT_MOVE',
