@@ -83,18 +83,6 @@ class DDPPOTrainer(PPOTrainer):
         )
         self.actor_critic.to(self.device)
 
-        pretrained_state = torch.load(
-            'data/gibson-2plus-resnet50.pth', map_location="cpu"
-        )
-        prefix = "actor_critic.net.visual_encoder."
-        self.actor_critic.net.visual_encoder.load_state_dict(
-            {
-                k[len(prefix) :]: v
-                for k, v in pretrained_state["state_dict"].items()
-                if k.startswith(prefix)
-            }
-        )
-
         if (
             self.config.RL.DDPPO.pretrained_encoder
             or self.config.RL.DDPPO.pretrained
