@@ -365,7 +365,7 @@ class PointNavResNetNet(Net):
                 self.gps_embedding(observations[EpisodicGPSSensor.cls_uuid])
             )
 
-        x.append(self.prev_action_embedding(prev_actions))
+        x.append(self.prev_action_embedding(prev_actions.float()))
         x = torch.cat(x, dim=1)
         x, rnn_hidden_states = self.state_encoder(x, rnn_hidden_states, masks)
 
