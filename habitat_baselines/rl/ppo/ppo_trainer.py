@@ -273,18 +273,6 @@ class PPOTrainer(BaseRLTrainer):
         )
         self.actor_critic.to(self.device)
 
-        pretrained_state = torch.load(
-            'data/gibson-2plus-resnet50.pth', map_location="cpu"
-        )
-        prefix = "actor_critic.net.visual_encoder."
-        self.actor_critic.net.visual_encoder.load_state_dict(
-            {
-                k[len(prefix) :]: v
-                for k, v in pretrained_state["state_dict"].items()
-                if k.startswith(prefix)
-            }
-        )
-
         self.agent = PPO(
             actor_critic=self.actor_critic,
             clip_param=ppo_cfg.clip_param,
@@ -771,7 +759,7 @@ class PPOTrainer(BaseRLTrainer):
                     deterministic=True,
                 )
 
-                actions = actions.reshape([self.envs.num_envs,2])
+                actions = actions.reshape([self.envs.num_envs,2]).to(device="cpu")
                 prev_actions.copy_(actions)
 
             # [NAOKI]
@@ -830,6 +818,26 @@ class PPOTrainer(BaseRLTrainer):
                             current_episodes[i].episode_id,
                         )
                     ] = episode_stats
+                    
+                    # NAOKI
+                    # print(episode_stats)
+                    episode_steps_filename = '/nethome/nyokoyama3/episode_steps.txt'
+                    if not os.path.isfile(episode_steps_filename):
+                        episode_steps_data = ''
+                    else:    
+                        with open(episode_steps_filename) as f:
+                            episode_steps_data = f.read()
+                    episode_steps_data += '{},{},{},{},{},{}\n'.format(
+                        current_episodes[i].episode_id,
+                        episode_stats['reward'],
+                        episode_stats['distance_to_goal'],
+                        episode_stats['success'],
+                        episode_stats['spl'],
+                        len(rgb_frames[i]))
+                    with open(episode_steps_filename,'w') as f:
+                        f.write(episode_steps_data)
+                    rgb_frames[i] = []
+                    # NAOKI
 
                     if len(self.config.VIDEO_OPTION) > 0:
                         generate_video(
@@ -847,6 +855,8 @@ class PPOTrainer(BaseRLTrainer):
                 elif len(self.config.VIDEO_OPTION) > 0:
                     frame = observations_to_image(observations[i], infos[i])
                     rgb_frames[i].append(frame)
+                else:
+                    rgb_frames[i].append(None)
 
             (
                 self.envs,
