@@ -73,12 +73,16 @@ class ContMove(SimulatorTaskAction):
         super().__init__(*args, **kwargs)
         # Icky, but apparently necessary...
         self._robo_id_1 = 0
+        self.curr_lin_vel = 0
+        self.curr_ang_vel = 0
 
     def _get_uuid(self, *args, **kwargs) -> str:
         return "cont_move"
 
     def reset(self, task, *args: Any, **kwargs: Any):
         task.is_stop_called = False
+        self.curr_lin_vel = 0
+        self.curr_ang_vel = 0
         if not self._sim._sim.get_existing_object_ids():
             self._sim._sim.config.sim_cfg.allow_sliding = True
             obj_templates_mgr = self._sim._sim.get_object_template_manager()
@@ -87,32 +91,15 @@ class ContMove(SimulatorTaskAction):
             self._sim._sim.set_object_motion_type(habitat_sim.physics.MotionType.KINEMATIC, 0)
 
     def step(self, task, *args, **kwargs):
-        # print('move args', args)
-        # print('move kwargs', kwargs)
-        # time_step = 1/60.
-        # time_step = 1/30.
-        time_step = 1.
 
-        move_amount = torch.tanh(kwargs['move']).item()
-        turn_amount = torch.tanh(kwargs['turn']).item()
+        lin_vel = torch.tanh(kwargs['move']).item()
+        ang_vel = torch.tanh(kwargs['turn']).item()
 
-        # distance_to_target = task.measurements.measures['distance_to_goal'].get_metric()
-        # if distance_to_target < 0.2:
-        #     task.is_stop_called = True    
-        # print('distance_to_target',distance_to_target)
-
-        # Scale actions
-        # move_amount *= 0.5
-        # turn_amount *= np.pi/2.0
-        # move_amount *= (0.5)*6
-        # turn_amount *= (np.pi)*6
-        # move_amount *= 0.25
-        # move_amount = max(move_amount,-0.5)*0.25
-        move_amount = (move_amount-1.)/2.*0.25
-        turn_amount *= np.pi/18.0
+        lin_vel = (lin_vel-1.)/2.*0.25
+        ang_vel *= np.pi/4.0
         self._sim._sim.config.sim_cfg.allow_sliding = True
 
-        if abs(move_amount) < 0.1*0.25 and abs(turn_amount) < 0.1*np.pi/18.0:
+        if abs(lin_vel) < 0.1*0.25 and abs(ang_vel) < 0.1*np.pi/4.0:
             task.is_stop_called = True
         
         vel_control = habitat_sim.physics.VelocityControl()
@@ -120,39 +107,68 @@ class ContMove(SimulatorTaskAction):
         vel_control.controlling_ang_vel = True
         vel_control.lin_vel_is_local = True
         vel_control.ang_vel_is_local = True
-        vel_control.linear_velocity = np.array([0.0, 0.0, move_amount])
-        vel_control.angular_velocity = np.array([0.0, turn_amount, 0])
-
-        # New code start
-        previous_rigid_state = self._sim._sim.get_rigid_state(self._robo_id_1)
-        # manually integrate the rigid state
-        target_rigid_state = vel_control.integrate_transform(
-            time_step, previous_rigid_state
-        )
-
-        # snap rigid state to navmesh and set state to object/agent
-        end_pos = self._sim._sim.step_filter(
-            previous_rigid_state.translation, target_rigid_state.translation
-        )
-        self._sim._sim.set_translation(end_pos, self._robo_id_1)
-        self._sim._sim.set_rotation(target_rigid_state.rotation, self._robo_id_1)
-
-        # Check if a collision occured
-        dist_moved_before_filter = (
-            target_rigid_state.translation - previous_rigid_state.translation
-        ).dot()
-        dist_moved_after_filter = (end_pos - previous_rigid_state.translation).dot()
-
-        # NB: There are some cases where ||filter_end - end_pos|| > 0 when a
-        # collision _didn't_ happen. One such case is going up stairs.  Instead,
-        # we check to see if the the amount moved after the application of the filter
-        # is _less_ than the amount moved before the application of the filter
-        EPS = 1e-5
-        collided = (dist_moved_after_filter + EPS) < dist_moved_before_filter
-        # New code end
-
         
-        ret = self._sim._sim.step_physics(time_step)
+        '''
+        Policy frequency is 1Hz.
+        Control frequency is 100Hz.
+        '''
+        policy_hz = 1
+        ctrl_hz   = 100
+        ctrl_time_step   = 1/ctrl_hz
+        policy_time_step = 1/policy_hz
+        num_ctrl_steps = policy_time_step / ctrl_time_step
+        accel_lin_lim = 0.8 # m/s^2
+        accel_ang_lim = 5.4 # rad/s^2
+        accel_lin_step = accel_lin_lim/ctrl_hz
+        accel_ang_step = accel_ang_lim/ctrl_hz
+        start_lin_vel = self.curr_lin_vel
+        start_ang_vel = self.curr_ang_vel
+
+        for _ in range(int(num_ctrl_steps)):
+
+            if lin_vel > start_lin_vel:
+                self.curr_lin_vel = min(lin_vel, self.curr_lin_vel+accel_lin_step)
+            else:
+                self.curr_lin_vel = max(lin_vel, self.curr_lin_vel-accel_lin_step)
+
+            if ang_vel > start_ang_vel:
+                self.curr_ang_vel = min(ang_vel, self.curr_ang_vel+accel_ang_step)
+            else:
+                self.curr_ang_vel = max(ang_vel, self.curr_ang_vel-accel_ang_step)
+
+            vel_control.linear_velocity = np.array([0.0, 0.0, self.curr_lin_vel])
+            vel_control.angular_velocity = np.array([0.0, self.curr_ang_vel, 0])
+
+            # New code start
+            previous_rigid_state = self._sim._sim.get_rigid_state(self._robo_id_1)
+            # manually integrate the rigid state
+            target_rigid_state = vel_control.integrate_transform(
+                ctrl_time_step, previous_rigid_state
+            )
+
+            # snap rigid state to navmesh and set state to object/agent
+            end_pos = self._sim._sim.step_filter(
+                previous_rigid_state.translation, target_rigid_state.translation
+            )
+            self._sim._sim.set_translation(end_pos, self._robo_id_1)
+            self._sim._sim.set_rotation(target_rigid_state.rotation, self._robo_id_1)
+
+            # Check if a collision occured
+            dist_moved_before_filter = (
+                target_rigid_state.translation - previous_rigid_state.translation
+            ).dot()
+            dist_moved_after_filter = (end_pos - previous_rigid_state.translation).dot()
+
+            # NB: There are some cases where ||filter_end - end_pos|| > 0 when a
+            # collision _didn't_ happen. One such case is going up stairs.  Instead,
+            # we check to see if the the amount moved after the application of the filter
+            # is _less_ than the amount moved before the application of the filter
+            EPS = 1e-5
+            collided = (dist_moved_after_filter + EPS) < dist_moved_before_filter
+            # New code end
+            
+            ret = self._sim._sim.step_physics(ctrl_time_step)
+
         return self._sim.step(HabitatSimActions.CONT_MOVE)
 
 @habitat.registry.register_task_action
