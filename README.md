@@ -5,6 +5,8 @@
 Habitat-API
 ==============================
 
+NOTE FOR REPRODUCING CONTINUOUS CONTROL EXPERIMENTS: Please follow the instructions at github.com/facebookresearch/habitat-sim to install the Habitat simulator, then follow the instructions here to install Habitat-Lab. After those are successfully installed, the dataset can be downloaded at the link here further down in the README under "Datasets". Then, follow the instructions at https://github.com/naokiyokoyama/habitat-lab/tree/cont_ctrl/habitat_baselines/rl/ddppo and use the config file ddppo_trainer_4.yaml in habitat_baselines/configs/pointnav to start the training script, after properly pointing the filepaths within the yaml file to your dataset and desired paths for the checkpoint and tensorboard directories.
+
 Habitat-API is a modular high-level library for end-to-end development in embodied AI --
 defining embodied AI tasks (e.g. navigation, instruction following, question answering), configuring embodied agents (physical form, sensors, capabilities), training these agents (via imitation or reinforcement learning, or no learning at all as in classical SLAM), and benchmarking their performance on the defined tasks using standard metrics.
 
