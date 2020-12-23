@@ -78,6 +78,9 @@ class DDPPOTrainer(PPOTrainer):
             num_recurrent_layers=self.config.RL.DDPPO.num_recurrent_layers,
             backbone=self.config.RL.DDPPO.backbone,
             normalize_visual_inputs=False,
+            dim_actions=self._num_actions,
+            action_distribution=self._action_distribution,
+            discrete=not self._cont_ctrl
             # normalize_visual_inputs="rgb"
             # in self.envs.observation_spaces[0].spaces,
         )
@@ -221,6 +224,8 @@ class DDPPOTrainer(PPOTrainer):
             self.envs.action_spaces[0],
             ppo_cfg.hidden_size,
             num_recurrent_layers=self.actor_critic.net.num_recurrent_layers,
+            dim_actions=self._num_actions,
+            discrete=not self._cont_ctrl
         )
         rollouts.to(self.device)
 

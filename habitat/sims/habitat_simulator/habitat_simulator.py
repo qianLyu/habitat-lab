@@ -183,13 +183,14 @@ class HabitatSim(Simulator):
         self.sim_config = self.create_sim_config(self._sensor_suite)
         self._current_scene = self.sim_config.sim_cfg.scene.id
         self._sim = habitat_sim.Simulator(self.sim_config)
-        # self._action_space = spaces.Discrete(
-        #     len(self.sim_config.agents[0].action_space)
-        # )
-        self._action_space = spaces.Box(
-            # np.array([-1,-1]), np.array([1,1])
-            np.array([float('-inf'),float('-inf')]), np.array([float('inf'),float('inf')])
-        )
+        if hasattr(config, "ACTION_SPACE") and config.ACTION_SPACE == "CONT_CTRL":
+            self._action_space = spaces.Box(
+                np.array([float('-inf'),float('-inf')]), np.array([float('inf'),float('inf')])
+            )
+        else:
+            self._action_space = spaces.Discrete(
+                len(self.sim_config.agents[0].action_space)
+            )
         self._prev_sim_obs = None
 
     def create_sim_config(

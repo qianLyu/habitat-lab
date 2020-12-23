@@ -12,6 +12,7 @@ SIMULATOR:
   DEPTH_SENSOR:
     WIDTH: 256
     HEIGHT: 256
+  ACTION_SPACE: "CONT_CTRL"
 TASK:
   TYPE: Nav-v0
   SUCCESS_DISTANCE: 0.2
@@ -28,7 +29,7 @@ TASK:
     SUCCESS_DISTANCE: 0.2
 DATASET:
   TYPE: PointNav-v1
-  SPLIT: train
-  DATA_PATH: data/{split}/{split}.json.gz
-  # DATA_PATH: /srv/datasets/habitat-sim-datasets/pointnav/gibson/v1/{split}/{split}.json.gz
+  SPLIT: val
+  # DATA_PATH: data/{split}/{split}.json.gz
+  DATA_PATH: /srv/datasets/habitat-sim-datasets/pointnav/gibson/v1/{split}/{split}.json.gz
 

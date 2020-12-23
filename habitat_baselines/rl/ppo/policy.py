@@ -12,20 +12,27 @@ from habitat.tasks.nav.nav import (
     IntegratedPointGoalGPSAndCompassSensor,
     PointGoalSensor,
 )
-from habitat_baselines.common.utils import CategoricalNet, Flatten
+from habitat_baselines.common.utils import CategoricalNet, GaussianNet, Flatten
 from habitat_baselines.rl.models.rnn_state_encoder import RNNStateEncoder
 from habitat_baselines.rl.models.simple_cnn import SimpleCNN
 
 
 class Policy(nn.Module):
-    def __init__(self, net, dim_actions):
+    def __init__(self, net, dim_actions, action_distribution='categorical'):
         super().__init__()
         self.net = net
         self.dim_actions = dim_actions
 
-        self.action_distribution = CategoricalNet(
-            self.net.output_size, self.dim_actions
-        )
+        assert action_distribution in ['categorical', 'gaussian'], "Unknown action distribution provided"
+        if action_distribution == 'categorical':
+            self.action_distribution = CategoricalNet(
+                self.net.output_size, self.dim_actions
+            )
+        elif action_distribution == 'gaussian':
+            self.action_distribution = GaussianNet(
+                self.net.output_size, self.dim_actions
+            )
+
         self.critic = CriticHead(self.net.output_size)
 
     def forward(self, *x):
