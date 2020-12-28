@@ -42,7 +42,6 @@ class PointNavResNetPolicy(Policy):
         obs_transform=ResizeCenterCropper(size=(256, 256)),
         dim_actions=None,
         action_distribution='categorical',
-        discrete=True
     ):
         if dim_actions is None:
             dim_actions = action_space.n
@@ -57,7 +56,7 @@ class PointNavResNetPolicy(Policy):
                 resnet_baseplanes=resnet_baseplanes,
                 normalize_visual_inputs=normalize_visual_inputs,
                 obs_transform=obs_transform,
-                discrete=discrete
+                discrete=action_distribution=='categorical'
             ),
             dim_actions=dim_actions,
             action_distribution=action_distribution
@@ -197,8 +196,11 @@ class PointNavResNetNet(Net):
         super().__init__()
 
         self._n_prev_action = 32
+
+        self.discrete = discrete
         if discrete:
-            self.prev_action_embedding = nn.Embedding(action_space.n + 1, 32)
+            self.prev_action_embedding = nn.Embedding(action_space.n + 1, self._n_prev_action)
+            # self.prev_action_embedding = nn.Embedding(7, self._n_prev_action)
         else:
             self.prev_action_embedding = nn.Linear(2, self._n_prev_action)
         rnn_input_size = self._n_prev_action
@@ -375,7 +377,17 @@ class PointNavResNetNet(Net):
                 self.gps_embedding(observations[EpisodicGPSSensor.cls_uuid])
             )
 
-        x.append(self.prev_action_embedding(prev_actions.float()))
+        if self.discrete:
+            prev_actions = self.prev_action_embedding(
+                ((prev_actions.float() + 1) * masks).long().squeeze(dim=-1)
+            )
+            x.append(prev_actions)
+        else:
+            x.append(self.prev_action_embedding(prev_actions.float()))
+        # print('start')
+        # for xx in x:
+        #     print('xx',(xx==xx).byte().any().item())    
+        # print('end')
         x = torch.cat(x, dim=1)
         x, rnn_hidden_states = self.state_encoder(x, rnn_hidden_states, masks)
 

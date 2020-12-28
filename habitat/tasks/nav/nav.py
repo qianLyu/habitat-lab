@@ -591,6 +591,45 @@ class SPL(Measure):
 
 
 @registry.register_measure
+class SCT(SPL):
+    r"""Success weighted by Completion Time
+
+    """
+    def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
+        return "sct"
+
+    def reset_metric(self, episode, task, *args: Any, **kwargs: Any):
+        task.measurements.check_measure_dependencies(
+            self.uuid, [DistanceToGoal.cls_uuid, Success.cls_uuid]
+        )
+
+        self._num_steps_taken = 0
+        self._was_last_success = False
+        self._start_end_episode_distance = task.measurements.measures[
+            DistanceToGoal.cls_uuid
+        ].get_metric()
+        self.update_metric(episode=episode, task=task, *args, **kwargs)
+
+    def update_metric(
+        self, episode, task: EmbodiedTask, *args: Any, **kwargs: Any
+    ):
+        ep_success = task.measurements.measures[Success.cls_uuid].get_metric()
+        if not ep_success or (ep_success and not self._was_last_success):
+            self._num_steps_taken += 1 
+        self._was_last_success = ep_success
+        
+        ORACLE_METERS_PER_SECOND = 0.25  # meter/seconds TODO don't hardcode this
+        CONTROL_PERIOD = 1 # seconds TODO don't harcode this
+        oracle_time = self._start_end_episode_distance / ORACLE_METERS_PER_SECOND
+        agent_time = self._num_steps_taken*CONTROL_PERIOD
+        self._metric = ep_success * (
+            oracle_time
+            / max(
+                oracle_time, agent_time
+            )
+        )
+
+@registry.register_measure
 class SoftSPL(SPL):
     r"""Soft SPL
 

@@ -183,7 +183,7 @@ class HabitatSim(Simulator):
         self.sim_config = self.create_sim_config(self._sensor_suite)
         self._current_scene = self.sim_config.sim_cfg.scene.id
         self._sim = habitat_sim.Simulator(self.sim_config)
-        if hasattr(config, "ACTION_SPACE") and config.ACTION_SPACE == "CONT_CTRL":
+        if hasattr(config, "ACTION_SPACE") and config.ACTION_SPACE == "CONTINUOUS":
             self._action_space = spaces.Box(
                 np.array([float('-inf'),float('-inf')]), np.array([float('inf'),float('inf')])
             )

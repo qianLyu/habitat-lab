@@ -51,24 +51,43 @@ class PPOTrainer(BaseRLTrainer):
         self._static_encoder = False
         self._encoder = None
 
-        # if hasattr(config.TASK_CONFIG, "ACTION_SPACE") and config.TASK_CONFIG.ACTION_SPACE == "CONT_CTRL":
-        if hasattr(config.TASK_CONFIG.SIMULATOR, "ACTION_SPACE") and config.TASK_CONFIG.SIMULATOR.ACTION_SPACE == "CONT_CTRL":
-        # if False:
-            self._cont_ctrl = True
-            self._num_actions = 2
-            self._action_distribution = 'gaussian'
+        if (
+            # Continuous control
+            getattr(config.TASK_CONFIG.SIMULATOR, "ACTION_SPACE", None) == "CONTINUOUS"
+            # Discrete control with simultaneous linear+angular movement
+            or (
+                getattr(config.TASK_CONFIG.SIMULATOR, "ACTION_SPACE", None) == "DISCRETE"   
+                and getattr(config.TASK_CONFIG.SIMULATOR, "NUM_ACTION_INCREMENTS", 0) > 0
+            )
+        ): 
+            self._action_distribution = config.TASK_CONFIG.SIMULATOR.ACTION_DISTRIBUTION.lower()
+            self._cont_ctrl = True # Though actions are technically from a discrete set for 2nd condition,
+                                   # they are implemented with the continuous action space for simultaneous
+                                   # linear+angular movement support.
             config.defrost()
             config.TASK_CONFIG.TASK.ACTIONS.CONT_MOVE = habitat.config.Config()
             config.TASK_CONFIG.TASK.ACTIONS.CONT_MOVE.TYPE = "ContMove"
             config.TASK_CONFIG.SIMULATOR.ACTION_SPACE_CONFIG = "ContCtrlSpace"
             config.TASK_CONFIG.TASK.POSSIBLE_ACTIONS = ['CONT_MOVE']
             config.freeze()
+
+            # Continuous control
+            if getattr(config.TASK_CONFIG.SIMULATOR, "ACTION_SPACE", None) == "CONTINUOUS":
+                assert self._action_distribution in ['beta','gaussian'], 'Invalid action distribution for continuous'
+                self._dim_actions = 2
+            # Discrete control with simultaneous linear+angular movement
+            else:
+                assert self._action_distribution=='categorical', 'Invalid action distribution for discrete'
+                self._num_action_increments = config.TASK_CONFIG.SIMULATOR.NUM_ACTION_INCREMENTS
+                self._dim_actions = (self._num_action_increments**2)*2-self._num_action_increments
+
+        # Regular discrete control with 4 actions (fwd, stop, left, right)
         else:
-            self._cont_ctrl = False
-            self._num_actions = None
+            self._cont_ctrl = False # Use original Habitat action space configuration
+            self._dim_actions = 4
             self._action_distribution = 'categorical'
 
-
+        self._discrete_actions = self._action_distribution == 'categorical'
 
     def _setup_actor_critic_agent(self, ppo_cfg: Config) -> None:
         r"""Sets up actor critic and agent for PPO.
@@ -186,6 +205,28 @@ class PPOTrainer(BaseRLTrainer):
 
         return results
 
+    def _discrete_to_continuous(self, action_indices):
+        move_axis = np.linspace(-1, 1, self._num_action_increments)
+        turn_axis = np.linspace(-1, 1, self._num_action_increments*2-1)
+        move_axis, turn_axis = np.meshgrid(move_axis, turn_axis)
+        move_axis = move_axis.flatten() 
+        turn_axis = turn_axis.flatten() 
+
+        step_actions = []
+        for action_index in action_indices:
+            step_action = {
+                'action': 'CONT_MOVE',
+                'action_args': 
+                    {
+                        'move': move_axis[action_index],
+                        'turn': turn_axis[action_index],
+                        'distribution': self._action_distribution
+                    }
+            }
+            step_actions.append(step_action)
+
+        return step_actions
+
     def _collect_rollout_step(
         self, rollouts, current_episode_reward, running_episode_stats
     ):
@@ -216,8 +257,19 @@ class PPOTrainer(BaseRLTrainer):
         t_step_env = time.time()
 
         if self._cont_ctrl:
-            actions = actions.reshape([self.envs.num_envs,2]).to(device="cpu")
-            step_actions = [{'action': 'CONT_MOVE','action_args': {'move': a[0],'turn': a[1],}} for a in actions]
+            if self._action_distribution == 'categorical':
+                step_actions = self._discrete_to_continuous([a[0].to(device="cpu").long() for a in actions])
+                # assert 4==32, str(actions)
+            else:
+                actions = actions.reshape([self.envs.num_envs,2]).to(device="cpu")
+                step_actions = [{'action': 'CONT_MOVE',
+                                 'action_args': 
+                                     {
+                                        'move': a[0],
+                                        'turn': a[1],
+                                        'distribution': self._action_distribution
+                                     }
+                                } for a in actions]
             outputs = self.envs.step(step_actions)
         else:
             outputs = self.envs.step([a[0].item() for a in actions])
@@ -312,6 +364,8 @@ class PPOTrainer(BaseRLTrainer):
         self.envs = construct_envs(
             self.config, get_env_class(self.config.ENV_NAME)
         )
+        if self._dim_actions is None:
+            self._dim_actions = self.envs.action_spaces[0].n
 
         ppo_cfg = self.config.RL.PPO
         self.device = (
@@ -577,14 +631,21 @@ class PPOTrainer(BaseRLTrainer):
                     deterministic=True,
                 )
 
-                if self._cont_ctrl:
-                    actions = actions.reshape([self.envs.num_envs,2]).to(device="cpu")
+                if self._action_distribution != 'categorical':
+                    actions = actions.reshape([self.envs.num_envs, self._dim_actions]).to(device="cpu")
 
                 prev_actions.copy_(actions)
 
             if self._cont_ctrl:
                 actions = actions.reshape([self.envs.num_envs,2]).to(device="cpu")
-                step_actions = [{'action': 'CONT_MOVE','action_args': {'move': a[0],'turn': a[1],}} for a in actions]
+                step_actions = [{'action': 'CONT_MOVE',
+                             'action_args': 
+                                 {
+                                    'move': a[0],
+                                    'turn': a[1],
+                                    'distribution': self._action_distribution
+                                 }
+                            } for a in actions]
                 outputs = self.envs.step(step_actions)
             else:
                 outputs = self.envs.step([a[0].item() for a in actions])
@@ -633,22 +694,27 @@ class PPOTrainer(BaseRLTrainer):
                     
                     # NAOKI
                     # print(episode_stats)
-                    episode_steps_filename = '/nethome/nyokoyama3/episode_steps.txt'
-                    if not os.path.isfile(episode_steps_filename):
-                        episode_steps_data = ''
-                    else:    
-                        with open(episode_steps_filename) as f:
-                            episode_steps_data = f.read()
-                    episode_steps_data += '{},{},{},{},{},{}\n'.format(
-                        current_episodes[i].episode_id,
-                        episode_stats['reward'],
-                        episode_stats['distance_to_goal'],
-                        episode_stats['success'],
-                        episode_stats['spl'],
-                        len(rgb_frames[i]))
-                    with open(episode_steps_filename,'w') as f:
-                        f.write(episode_steps_data)
-                    rgb_frames[i] = []
+                    txt_dir = getattr(self.config, "TXT_DIR", '')
+                    if txt_dir != '':
+                        if not os.path.isdir(txt_dir):
+                            os.makedirs(txt_dir)
+                        episode_steps_filename = 'ckpt_{}.txt'.format(checkpoint_index)
+                        episode_steps_filename = os.path.join(txt_dir, episode_steps_filename)
+                        if not os.path.isfile(episode_steps_filename):
+                            episode_steps_data = ''
+                        else:    
+                            with open(episode_steps_filename) as f:
+                                episode_steps_data = f.read()
+                        episode_steps_data += '{},{},{},{},{},{}\n'.format(
+                            current_episodes[i].episode_id,
+                            episode_stats['reward'],
+                            episode_stats['distance_to_goal'],
+                            episode_stats['success'],
+                            episode_stats['spl'],
+                            len(rgb_frames[i])) # number of steps taken
+                        with open(episode_steps_filename,'w') as f:
+                            f.write(episode_steps_data)
+                        rgb_frames[i] = []
                     # NAOKI
 
                     if len(self.config.VIDEO_OPTION) > 0:

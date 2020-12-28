@@ -43,7 +43,6 @@ class CustomFixedCategorical(torch.distributions.Categorical):
     def mode(self):
         return self.probs.argmax(dim=-1, keepdim=True)
 
-
 class CategoricalNet(nn.Module):
     def __init__(self, num_inputs, num_outputs):
         super().__init__()
@@ -76,6 +75,42 @@ class GaussianNet(nn.Module):
         return CustomNormal(mu, std)
 
 class CustomNormal(torch.distributions.normal.Normal):
+    def sample(self, sample_shape=torch.Size()):
+        return super().rsample(sample_shape).unsqueeze(-1)
+
+    def log_probs(self, actions):
+        ret = (
+            super()
+            .log_prob(actions.squeeze(-1))
+            .view(actions.size(0), -1)
+            .sum(-1)
+            .unsqueeze(-1)
+        )
+        return ret
+
+    def mode(self):
+        return self.mean
+
+class BetaNet(nn.Module):
+    def __init__(self, num_inputs, num_outputs):
+        super().__init__()
+        
+        self.concentration1 = nn.Linear(num_inputs, num_outputs)
+        self.concentration0 = nn.Linear(num_inputs, num_outputs)
+        self.relu = nn.ReLU()
+
+        nn.init.orthogonal_(self.concentration1.weight, gain=0.01)
+        nn.init.constant_(self.concentration1.bias, 0)
+        nn.init.orthogonal_(self.concentration0.weight, gain=0.01)
+        nn.init.constant_(self.concentration0.bias, 0)
+
+    def forward(self, x):
+        # Use alpha and beta >= 1 according to [Chou et. al, 2017]
+        concentration1 = torch.add(self.relu(self.concentration1(x)), 1.)
+        concentration0 = torch.add(self.relu(self.concentration0(x)), 1.)
+        return CustomBeta(concentration1, concentration0)
+
+class CustomBeta(torch.distributions.beta.Beta):
     def sample(self, sample_shape=torch.Size()):
         return super().rsample(sample_shape).unsqueeze(-1)
 

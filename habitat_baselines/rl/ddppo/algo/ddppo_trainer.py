@@ -78,9 +78,8 @@ class DDPPOTrainer(PPOTrainer):
             num_recurrent_layers=self.config.RL.DDPPO.num_recurrent_layers,
             backbone=self.config.RL.DDPPO.backbone,
             normalize_visual_inputs=False,
-            dim_actions=self._num_actions,
+            dim_actions=self._dim_actions,
             action_distribution=self._action_distribution,
-            discrete=not self._cont_ctrl
             # normalize_visual_inputs="rgb"
             # in self.envs.observation_spaces[0].spaces,
         )
@@ -218,14 +217,13 @@ class DDPPOTrainer(PPOTrainer):
                 batch["visual_features"] = self._encoder(batch)
 
         rollouts = RolloutStorage(
-            ppo_cfg.num_steps,
-            self.envs.num_envs,
-            obs_space,
-            self.envs.action_spaces[0],
-            ppo_cfg.hidden_size,
+            num_steps=ppo_cfg.num_steps,
+            num_envs=self.envs.num_envs,
+            observation_space=obs_space,
+            action_space=self.envs.action_spaces[0],
+            recurrent_hidden_state_size=ppo_cfg.hidden_size,
             num_recurrent_layers=self.actor_critic.net.num_recurrent_layers,
-            dim_actions=self._num_actions,
-            discrete=not self._cont_ctrl
+            discrete=self._discrete_actions
         )
         rollouts.to(self.device)
 
