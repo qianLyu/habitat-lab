@@ -259,7 +259,6 @@ class PPOTrainer(BaseRLTrainer):
         if self._cont_ctrl:
             if self._action_distribution == 'categorical':
                 step_actions = self._discrete_to_continuous([a[0].to(device="cpu").long() for a in actions])
-                # assert 4==32, str(actions)
             else:
                 actions = actions.reshape([self.envs.num_envs,2]).to(device="cpu")
                 step_actions = [{'action': 'CONT_MOVE',
@@ -582,8 +581,10 @@ class PPOTrainer(BaseRLTrainer):
             ppo_cfg.hidden_size,
             device=self.device,
         )
+        
+        dim_actions = 2 if self._action_distribution != 'categorical' else 1
         prev_actions = torch.zeros(
-            self.config.NUM_PROCESSES, 2, device=self.device, dtype=torch.long
+            self.config.NUM_PROCESSES, dim_actions, device=self.device, dtype=torch.long
         )
         not_done_masks = torch.zeros(
             self.config.NUM_PROCESSES, 1, device=self.device
@@ -637,15 +638,18 @@ class PPOTrainer(BaseRLTrainer):
                 prev_actions.copy_(actions)
 
             if self._cont_ctrl:
-                actions = actions.reshape([self.envs.num_envs,2]).to(device="cpu")
-                step_actions = [{'action': 'CONT_MOVE',
-                             'action_args': 
-                                 {
-                                    'move': a[0],
-                                    'turn': a[1],
-                                    'distribution': self._action_distribution
-                                 }
-                            } for a in actions]
+                if self._action_distribution == 'categorical':
+                    step_actions = self._discrete_to_continuous([a[0].to(device="cpu").long() for a in actions])
+                else:
+                    actions = actions.reshape([self.envs.num_envs,2]).to(device="cpu")
+                    step_actions = [{'action': 'CONT_MOVE',
+                                     'action_args': 
+                                         {
+                                            'move': a[0],
+                                            'turn': a[1],
+                                            'distribution': self._action_distribution
+                                         }
+                                    } for a in actions]
                 outputs = self.envs.step(step_actions)
             else:
                 outputs = self.envs.step([a[0].item() for a in actions])

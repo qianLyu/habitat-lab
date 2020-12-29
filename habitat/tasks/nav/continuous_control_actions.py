@@ -60,16 +60,16 @@ class ContMove(SimulatorTaskAction):
         move_amount = kwargs['move']
         turn_amount = kwargs['turn']
 
-        action_distrtibution = kwargs['distribution']
-        if action_distrtibution == 'beta':
+        action_distribution = kwargs['distribution']
+        if action_distribution == 'beta':
             # Beta output is bounded between [0, 1] already
             move_amount = move_amount*2.-1.
             turn_amount = turn_amount*2.-1.
-        elif action_distrtibution == 'gaussian':
+        elif action_distribution == 'gaussian':
             # Gaussian is unbounded
             move_amount = torch.tanh(move_amount).item()
             turn_amount = torch.tanh(turn_amount).item()
-        elif action_distrtibution != 'categorical':
+        elif action_distribution != 'categorical':
             raise RuntimeError("distribution not specified")
 
         # Scale actions

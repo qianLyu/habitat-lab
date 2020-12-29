@@ -56,7 +56,8 @@ class PointNavResNetPolicy(Policy):
                 resnet_baseplanes=resnet_baseplanes,
                 normalize_visual_inputs=normalize_visual_inputs,
                 obs_transform=obs_transform,
-                discrete=action_distribution=='categorical'
+                discrete=action_distribution=='categorical',
+                dim_actions=dim_actions,
             ),
             dim_actions=dim_actions,
             action_distribution=action_distribution
@@ -191,7 +192,8 @@ class PointNavResNetNet(Net):
         resnet_baseplanes,
         normalize_visual_inputs,
         obs_transform=ResizeCenterCropper(size=(256, 256)),
-        discrete=True
+        discrete=True,
+        dim_actions=4
     ):
         super().__init__()
 
@@ -199,8 +201,7 @@ class PointNavResNetNet(Net):
 
         self.discrete = discrete
         if discrete:
-            self.prev_action_embedding = nn.Embedding(action_space.n + 1, self._n_prev_action)
-            # self.prev_action_embedding = nn.Embedding(7, self._n_prev_action)
+            self.prev_action_embedding = nn.Embedding(dim_actions + 1, self._n_prev_action)
         else:
             self.prev_action_embedding = nn.Linear(2, self._n_prev_action)
         rnn_input_size = self._n_prev_action

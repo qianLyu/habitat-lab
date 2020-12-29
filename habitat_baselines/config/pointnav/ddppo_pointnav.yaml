@@ -4,13 +4,13 @@ ENV_NAME: "NavRLEnv"
 SIMULATOR_GPU_ID: 0
 TORCH_GPU_ID: 0
 VIDEO_OPTION: []
-TENSORBOARD_DIR:    '/nethome/nyokoyama3/n/cont_ctrl_results/discrete_orig/tb'
+TENSORBOARD_DIR:    '/nethome/nyokoyama3/n/cont_ctrl_results/discrete_orig/tb_eval'
 VIDEO_DIR:          '/nethome/nyokoyama3/n/cont_ctrl_results/discrete_orig/video_dir'
 EVAL_CKPT_PATH_DIR: '/nethome/nyokoyama3/n/cont_ctrl_results/discrete_orig/checkpoints'
 CHECKPOINT_FOLDER:  '/nethome/nyokoyama3/n/cont_ctrl_results/discrete_orig/checkpoints'
 TXT_DIR:            '/nethome/nyokoyama3/n/cont_ctrl_results/discrete_orig/txts'
 TEST_EPISODE_COUNT: -1
-NUM_PROCESSES: 2
+NUM_PROCESSES: 14
 SENSORS: ["DEPTH_SENSOR"]
 NUM_UPDATES: 10000000
 LOG_INTERVAL: 10
