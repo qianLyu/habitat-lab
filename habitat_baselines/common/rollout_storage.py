@@ -22,7 +22,7 @@ class RolloutStorage:
         action_space,
         recurrent_hidden_state_size,
         num_recurrent_layers=1,
-        discrete=True
+        action_distribution='categorical'
     ):
         self.observations = {}
 
@@ -45,14 +45,14 @@ class RolloutStorage:
         self.returns = torch.zeros(num_steps + 1, num_envs, 1)
 
         self.action_log_probs = torch.zeros(num_steps, num_envs, 1)
-        if discrete:
+        if action_distribution == 'categorical':
             action_shape = 1
         else:
             action_shape = 2
         self.actions = torch.zeros(num_steps, num_envs, action_shape)
         self.prev_actions = torch.zeros(num_steps + 1, num_envs, action_shape)
         # if action_space.__class__.__name__ == "ActionSpace":
-        if discrete:
+        if 'categorical' in action_distribution:
             self.actions = self.actions.long()
             self.prev_actions = self.prev_actions.long()
 

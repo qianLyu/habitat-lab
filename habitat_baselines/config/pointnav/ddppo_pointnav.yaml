@@ -4,13 +4,13 @@ ENV_NAME: "NavRLEnv"
 SIMULATOR_GPU_ID: 0
 TORCH_GPU_ID: 0
 VIDEO_OPTION: []
-TENSORBOARD_DIR:    '/nethome/nyokoyama3/n/cont_ctrl_results/discrete_orig/tb_eval'
-VIDEO_DIR:          '/nethome/nyokoyama3/n/cont_ctrl_results/discrete_orig/video_dir'
-EVAL_CKPT_PATH_DIR: '/nethome/nyokoyama3/n/cont_ctrl_results/discrete_orig/checkpoints'
-CHECKPOINT_FOLDER:  '/nethome/nyokoyama3/n/cont_ctrl_results/discrete_orig/checkpoints'
-TXT_DIR:            '/nethome/nyokoyama3/n/cont_ctrl_results/discrete_orig/txts'
+TENSORBOARD_DIR:    '/nethome/nyokoyama3/n/cont_ctrl_results/junk/tb'
+VIDEO_DIR:          '/nethome/nyokoyama3/n/cont_ctrl_results/junk/video_dir'
+EVAL_CKPT_PATH_DIR: '/nethome/nyokoyama3/n/cont_ctrl_results/junk/checkpoints'
+CHECKPOINT_FOLDER:  '/nethome/nyokoyama3/n/cont_ctrl_results/junk/checkpoints'
+TXT_DIR:            '/nethome/nyokoyama3/n/cont_ctrl_results/junk/txts'
 TEST_EPISODE_COUNT: -1
-NUM_PROCESSES: 14
+NUM_PROCESSES: 8
 SENSORS: ["DEPTH_SENSOR"]
 NUM_UPDATES: 10000000
 LOG_INTERVAL: 10
@@ -18,6 +18,7 @@ CHECKPOINT_INTERVAL: 250
 
 RL:
   SUCCESS_REWARD: 2.5
+  STEP_REWARD_DECAY: 80000000 # At how many frames will it decay all the way to 0 
   PPO:
     # ppo params
     clip_param: 0.2

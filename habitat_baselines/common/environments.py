@@ -39,6 +39,7 @@ class NavRLEnv(habitat.RLEnv):
 
         self._previous_measure = None
         self._previous_action = None
+        self._step_reward_decay = None
         super().__init__(self._core_env_config, dataset)
 
     def reset(self):
@@ -51,6 +52,7 @@ class NavRLEnv(habitat.RLEnv):
 
     def step(self, *args, **kwargs):
         self._previous_action = kwargs["action"]
+        self._step_reward_decay = kwargs.get('step_reward_decay', -1)
         return super().step(*args, **kwargs)
 
     def get_reward_range(self):
@@ -64,7 +66,10 @@ class NavRLEnv(habitat.RLEnv):
 
         current_measure = self._env.get_metrics()[self._reward_measure_name]
 
-        reward += self._previous_measure - current_measure
+        if self._step_reward_decay != -1:
+            reward += (self._previous_measure - current_measure)*self._step_reward_decay
+        else:
+            reward += self._previous_measure - current_measure
         self._previous_measure = current_measure
 
         if self._episode_success():

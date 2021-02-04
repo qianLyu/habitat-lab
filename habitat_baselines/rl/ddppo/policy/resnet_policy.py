@@ -56,7 +56,7 @@ class PointNavResNetPolicy(Policy):
                 resnet_baseplanes=resnet_baseplanes,
                 normalize_visual_inputs=normalize_visual_inputs,
                 obs_transform=obs_transform,
-                discrete=action_distribution=='categorical',
+                action_distribution=action_distribution,
                 dim_actions=dim_actions,
             ),
             dim_actions=dim_actions,
@@ -192,19 +192,25 @@ class PointNavResNetNet(Net):
         resnet_baseplanes,
         normalize_visual_inputs,
         obs_transform=ResizeCenterCropper(size=(256, 256)),
-        discrete=True,
+        action_distribution='categorical',
         dim_actions=4
     ):
         super().__init__()
 
         self._n_prev_action = 32
-
-        self.discrete = discrete
-        if discrete:
-            self.prev_action_embedding = nn.Embedding(dim_actions + 1, self._n_prev_action)
-        else:
-            self.prev_action_embedding = nn.Linear(2, self._n_prev_action)
         rnn_input_size = self._n_prev_action
+
+        self.action_distribution = action_distribution
+        if action_distribution == 'categorical':
+            self.prev_action_embedding = nn.Embedding(dim_actions + 1, self._n_prev_action)
+        elif action_distribution == 'dual_categorical':
+            self.prev_action_embedding_linear  = nn.Embedding(dim_actions + 1, self._n_prev_action)
+            self.prev_action_embedding_angular = nn.Embedding(dim_actions * 2, self._n_prev_action)
+            rnn_input_size += self._n_prev_action
+        elif action_distribution in ['gaussian','beta','multi_gaussian']:
+            self.prev_action_embedding = nn.Linear(2, self._n_prev_action)
+        else:
+            raise RuntimeError('action_distribution {} not supported'.format(action_distribution))
 
         if (
             IntegratedPointGoalGPSAndCompassSensor.cls_uuid
@@ -378,17 +384,23 @@ class PointNavResNetNet(Net):
                 self.gps_embedding(observations[EpisodicGPSSensor.cls_uuid])
             )
 
-        if self.discrete:
+        if self.action_distribution == 'categorical':
             prev_actions = self.prev_action_embedding(
                 ((prev_actions.float() + 1) * masks).long().squeeze(dim=-1)
             )
             x.append(prev_actions)
+        elif self.action_distribution == 'dual_categorical':
+            prev_actions_linear = self.prev_action_embedding_linear(
+                ((prev_actions[:,0].unsqueeze(-1).float() + 1) * masks).long().squeeze(dim=-1)
+            )
+            x.append(prev_actions_linear)
+            prev_actions_angular = self.prev_action_embedding_angular(
+                ((prev_actions[:,1].unsqueeze(-1).float() + 1) * masks).long().squeeze(dim=-1)
+            )
+            x.append(prev_actions_angular)
         else:
             x.append(self.prev_action_embedding(prev_actions.float()))
-        # print('start')
-        # for xx in x:
-        #     print('xx',(xx==xx).byte().any().item())    
-        # print('end')
+
         x = torch.cat(x, dim=1)
         x, rnn_hidden_states = self.state_encoder(x, rnn_hidden_states, masks)
 

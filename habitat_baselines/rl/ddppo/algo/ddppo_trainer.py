@@ -223,7 +223,7 @@ class DDPPOTrainer(PPOTrainer):
             action_space=self.envs.action_spaces[0],
             recurrent_hidden_state_size=ppo_cfg.hidden_size,
             num_recurrent_layers=self.actor_critic.net.num_recurrent_layers,
-            discrete=self._discrete_actions
+            action_distribution=self._action_distribution
         )
         rollouts.to(self.device)
 
@@ -291,6 +291,8 @@ class DDPPOTrainer(PPOTrainer):
                     self.agent.clip_param = ppo_cfg.clip_param * linear_decay(
                         update, self.config.NUM_UPDATES
                     )
+
+                self._count_steps = count_steps
 
                 if EXIT.is_set():
                     self.envs.close()

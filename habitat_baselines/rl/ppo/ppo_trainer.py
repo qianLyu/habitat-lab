@@ -56,7 +56,7 @@ class PPOTrainer(BaseRLTrainer):
             getattr(config.TASK_CONFIG.SIMULATOR, "ACTION_SPACE", None) == "CONTINUOUS"
             # Discrete control with simultaneous linear+angular movement
             or (
-                getattr(config.TASK_CONFIG.SIMULATOR, "ACTION_SPACE", None) == "DISCRETE"   
+                getattr(config.TASK_CONFIG.SIMULATOR, "ACTION_SPACE", None) == "DISCRETE"
                 and getattr(config.TASK_CONFIG.SIMULATOR, "NUM_ACTION_INCREMENTS", 0) > 0
             )
         ): 
@@ -73,13 +73,16 @@ class PPOTrainer(BaseRLTrainer):
 
             # Continuous control
             if getattr(config.TASK_CONFIG.SIMULATOR, "ACTION_SPACE", None) == "CONTINUOUS":
-                assert self._action_distribution in ['beta','gaussian'], 'Invalid action distribution for continuous'
+                assert self._action_distribution in ['beta','gaussian','multi_gaussian'], 'Invalid action distribution for continuous'
                 self._dim_actions = 2
             # Discrete control with simultaneous linear+angular movement
             else:
-                assert self._action_distribution=='categorical', 'Invalid action distribution for discrete'
+                assert self._action_distribution in ['categorical', 'dual_categorical'], 'Invalid action distribution for discrete'
                 self._num_action_increments = config.TASK_CONFIG.SIMULATOR.NUM_ACTION_INCREMENTS
-                self._dim_actions = (self._num_action_increments**2)*2-self._num_action_increments
+                if self._action_distribution == 'categorical':
+                    self._dim_actions = (self._num_action_increments**2)*2-self._num_action_increments
+                else:
+                    self._dim_actions = self._num_action_increments
 
         # Regular discrete control with 4 actions (fwd, stop, left, right)
         else:
@@ -87,7 +90,14 @@ class PPOTrainer(BaseRLTrainer):
             self._dim_actions = 4
             self._action_distribution = 'categorical'
 
+        self._allow_sliding = config.TASK_CONFIG.SIMULATOR.HABITAT_SIM_V0.ALLOW_SLIDING
+        self._max_linear_speed  = config.TASK_CONFIG.SIMULATOR.FORWARD_STEP_SIZE
+        self._max_angular_speed = config.TASK_CONFIG.SIMULATOR.TURN_ANGLE
+
         self._discrete_actions = self._action_distribution == 'categorical'
+
+        # Step reward decay
+        self._step_reward_decay = getattr(config.RL, "STEP_REWARD_DECAY", -1)
 
     def _setup_actor_critic_agent(self, ppo_cfg: Config) -> None:
         r"""Sets up actor critic and agent for PPO.
@@ -205,22 +215,38 @@ class PPOTrainer(BaseRLTrainer):
 
         return results
 
-    def _discrete_to_continuous(self, action_indices):
+    def _discrete_to_continuous_actions(self, action_indices, eval_mode=False):
         move_axis = np.linspace(-1, 1, self._num_action_increments)
         turn_axis = np.linspace(-1, 1, self._num_action_increments*2-1)
         move_axis, turn_axis = np.meshgrid(move_axis, turn_axis)
         move_axis = move_axis.flatten() 
         turn_axis = turn_axis.flatten() 
 
+        action_value_tuples = [
+            (move_axis[action_index], turn_axis[action_index]) 
+            for action_index in action_indices
+        ]
+
+        return self._continuous_actions(action_value_tuples, eval_mode=eval_mode)
+
+    def _continuous_actions(self, action_value_tuples, eval_mode=False):
+        step_reward_decay = -1
+        if not eval_mode and self._step_reward_decay != -1:
+            step_reward_decay = max(0,1-self._count_steps/self._step_reward_decay)
+        
         step_actions = []
-        for action_index in action_indices:
+        for action_index in action_value_tuples:
             step_action = {
                 'action': 'CONT_MOVE',
                 'action_args': 
                     {
-                        'move': move_axis[action_index],
-                        'turn': turn_axis[action_index],
-                        'distribution': self._action_distribution
+                        'move': action_index[0],
+                        'turn': action_index[1],
+                        'distribution' : self._action_distribution,
+                        'allow_sliding': self._allow_sliding,
+                        'step_reward_decay': step_reward_decay,
+                        'max_linear_speed' : self._max_linear_speed,
+                        'max_angular_speed': self._max_angular_speed
                     }
             }
             step_actions.append(step_action)
@@ -256,22 +282,31 @@ class PPOTrainer(BaseRLTrainer):
 
         t_step_env = time.time()
 
+        # All agents except discrete_4
         if self._cont_ctrl:
             if self._action_distribution == 'categorical':
-                step_actions = self._discrete_to_continuous([a[0].to(device="cpu").long() for a in actions])
+                step_actions = self._discrete_to_continuous_actions([a[0].to(device="cpu").long() for a in actions])
             else:
                 actions = actions.reshape([self.envs.num_envs,2]).to(device="cpu")
-                step_actions = [{'action': 'CONT_MOVE',
-                                 'action_args': 
-                                     {
-                                        'move': a[0],
-                                        'turn': a[1],
-                                        'distribution': self._action_distribution
-                                     }
-                                } for a in actions]
+                # Dual categorical
+                if self._action_distribution == 'dual_categorical':
+                    d_actions = [a[0].long()*(self._dim_actions*2-1)+a[1].long() for a in actions]
+                    step_actions = self._discrete_to_continuous_actions(d_actions)
+                # Gaussian, beta (continuous)
+                else:
+                    step_actions = self._continuous_actions(actions)
             outputs = self.envs.step(step_actions)
+        # discrete_4
         else:
-            outputs = self.envs.step([a[0].item() for a in actions])
+            if self._step_reward_decay != -1:
+                step_actions = [{
+                                    'action': a[0].item(),
+                                    'step_reward_decay': max(0,1-self._count_steps/self._step_reward_decay),
+                                } for a in actions]
+                outputs = self.envs.step(step_actions)
+            else:
+                outputs = self.envs.step([a[0].item() for a in actions])
+
         observations, rewards, dones, infos = [list(x) for x in zip(*outputs)]
 
         env_time += time.time() - t_step_env
@@ -632,27 +667,65 @@ class PPOTrainer(BaseRLTrainer):
                     deterministic=True,
                 )
 
-                if self._action_distribution != 'categorical':
+                if 'categorical' not in self._action_distribution:
                     actions = actions.reshape([self.envs.num_envs, self._dim_actions]).to(device="cpu")
 
                 prev_actions.copy_(actions)
 
+            # All agents except discrete_4
             if self._cont_ctrl:
                 if self._action_distribution == 'categorical':
-                    step_actions = self._discrete_to_continuous([a[0].to(device="cpu").long() for a in actions])
+                    step_actions = self._discrete_to_continuous_actions([a[0].to(device="cpu").long() for a in actions], eval_mode=True)
                 else:
                     actions = actions.reshape([self.envs.num_envs,2]).to(device="cpu")
-                    step_actions = [{'action': 'CONT_MOVE',
-                                     'action_args': 
-                                         {
-                                            'move': a[0],
-                                            'turn': a[1],
-                                            'distribution': self._action_distribution
-                                         }
-                                    } for a in actions]
+                    # Dual categorical
+                    if self._action_distribution == 'dual_categorical':
+                        d_actions = [a[0].long()*(self._dim_actions*2-1)+a[1].long() for a in actions]
+                        step_actions = self._discrete_to_continuous_actions(d_actions, eval_mode=True)
+                    # Gaussian, beta (continuous)
+                    else:
+                        step_actions = self._continuous_actions(actions, eval_mode=True)
                 outputs = self.envs.step(step_actions)
+            # discrete_4
             else:
                 outputs = self.envs.step([a[0].item() for a in actions])
+
+            # if self._cont_ctrl:
+            #     if self._action_distribution == 'categorical':
+            #         if getattr(self.config, "REMAP", '') == 'YES':
+            #             step_actions0 = [a[0].to(device="cpu").long() for a in actions]
+            #             step_actions = []
+            #             D6_ACTIONS = [(1.,0.),(-1.,0.),(1.,1.),(1.,-1.),(-1.,1.),(-1.,-1.)]
+            #             for a in step_actions0:
+            #                 step_action = {
+            #                     'action': 'CONT_MOVE',
+            #                     'action_args': 
+            #                         {
+            #                             'move': D6_ACTIONS[a][0],
+            #                             'turn': D6_ACTIONS[a][1],
+            #                             'distribution': self._action_distribution
+            #                         }
+            #                 }
+            #                 step_actions.append(step_action)
+            #         else:
+            #             step_actions = self._discrete_to_continuous_actions([a[0].to(device="cpu").long() for a in actions])
+            #     else:
+            #         actions = actions.reshape([self.envs.num_envs,2]).to(device="cpu")
+            #         if self._action_distribution == 'dual_categorical':
+            #             d_actions = [a[0].long()*(self._dim_actions*2-1)+a[1].long() for a in actions]
+            #             step_actions = self._discrete_to_continuous_actions(d_actions)
+            #         else:
+            #             step_actions = [{'action': 'CONT_MOVE',
+            #                              'action_args': 
+            #                                  {
+            #                                     'move': a[0],
+            #                                     'turn': a[1],
+            #                                     'distribution': self._action_distribution
+            #                                  }
+            #                             } for a in actions]
+            #     outputs = self.envs.step(step_actions)
+            # else:
+            #     outputs = self.envs.step([a[0].item() for a in actions])
 
             observations, rewards, dones, infos = [
                 list(x) for x in zip(*outputs)
@@ -702,23 +775,26 @@ class PPOTrainer(BaseRLTrainer):
                     if txt_dir != '':
                         if not os.path.isdir(txt_dir):
                             os.makedirs(txt_dir)
-                        episode_steps_filename = 'ckpt_{}.txt'.format(checkpoint_index)
+                        episode_steps_filename = '{}.csv'.format(os.path.basename(checkpoint_path[:-4]).replace('.','_'))
                         episode_steps_filename = os.path.join(txt_dir, episode_steps_filename)
                         if not os.path.isfile(episode_steps_filename):
-                            episode_steps_data = ''
+                            episode_steps_data = 'id,reward,distance_to_goal,success,spl,sct,steps\n'
                         else:    
                             with open(episode_steps_filename) as f:
                                 episode_steps_data = f.read()
-                        episode_steps_data += '{},{},{},{},{},{}\n'.format(
+                        episode_steps_data += '{},{},{},{},{},{},{}\n'.format(
                             current_episodes[i].episode_id,
                             episode_stats['reward'],
                             episode_stats['distance_to_goal'],
                             episode_stats['success'],
                             episode_stats['spl'],
+                            episode_stats['sct'],
                             len(rgb_frames[i])) # number of steps taken
+                        lines = episode_steps_data.split('\n')
+                        if len(lines) >= 994:
+                            episode_steps_data = lines[0]+'\n'.join(sorted(lines[1:-1], key=lambda x: int(x.split(',')[0])))+'\n'
                         with open(episode_steps_filename,'w') as f:
                             f.write(episode_steps_data)
-                        rgb_frames[i] = []
                     # NAOKI
 
                     if len(self.config.VIDEO_OPTION) > 0:
@@ -731,7 +807,7 @@ class PPOTrainer(BaseRLTrainer):
                             metrics=self._extract_scalars_from_info(infos[i]),
                             tb_writer=writer,
                         )
-                        rgb_frames[i] = []
+                    rgb_frames[i] = []
 
                 # episode continues
                 elif len(self.config.VIDEO_OPTION) > 0:

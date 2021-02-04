@@ -12,7 +12,7 @@ from habitat.tasks.nav.nav import (
     IntegratedPointGoalGPSAndCompassSensor,
     PointGoalSensor,
 )
-from habitat_baselines.common.utils import CategoricalNet, GaussianNet, BetaNet, Flatten
+from habitat_baselines.common.utils import CategoricalNet, DualCategoricalNet, GaussianNet, MultiGaussianNet, BetaNet, Flatten
 from habitat_baselines.rl.models.rnn_state_encoder import RNNStateEncoder
 from habitat_baselines.rl.models.simple_cnn import SimpleCNN
 
@@ -26,12 +26,20 @@ class Policy(nn.Module):
             self.action_distribution = CategoricalNet(
                 self.net.output_size, dim_actions
             )
+        elif action_distribution == 'dual_categorical':
+            self.action_distribution = DualCategoricalNet(
+                self.net.output_size, dim_actions, dim_actions*2-1
+            )
         elif action_distribution == 'beta':
             self.action_distribution = BetaNet(
                 self.net.output_size, dim_actions
             )
         elif action_distribution == 'gaussian':
             self.action_distribution = GaussianNet(
+                self.net.output_size, dim_actions
+            )
+        elif action_distribution == 'multi_gaussian':
+            self.action_distribution = MultiGaussianNet(
                 self.net.output_size, dim_actions
             )
         else:

@@ -132,8 +132,6 @@ class PPO(nn.Module):
                     - dist_entropy * self.entropy_coef
                 )
 
-                v = self.actor_critic.net.prev_action_embedding.weight
-                print('actor_critic',(v==v).byte().any().item())
                 self.before_backward(total_loss)
                 total_loss.backward()
                 self.after_backward(total_loss)
@@ -141,9 +139,6 @@ class PPO(nn.Module):
                 self.before_step()
                 self.optimizer.step()
                 self.after_step()
-
-                v = self.actor_critic.net.prev_action_embedding.weight
-                print('actor_critic',(v==v).byte().any().item())
 
                 value_loss_epoch += value_loss.item()
                 action_loss_epoch += action_loss.item()
