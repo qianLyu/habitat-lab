@@ -65,17 +65,20 @@ class ContMove(SimulatorTaskAction):
             # Beta output is bounded between [0, 1] already
             move_amount = move_amount*2.-1.
             turn_amount = turn_amount*2.-1.
-        elif action_distribution == 'gaussian':
+        elif 'gaussian' in action_distribution:
             # Gaussian is unbounded
             move_amount = torch.tanh(move_amount).item()
             turn_amount = torch.tanh(turn_amount).item()
-        elif action_distribution != 'categorical':
+        elif action_distribution not in ['categorical', 'dual_categorical']:
             raise RuntimeError("distribution not specified")
 
-        # Scale actions
-        move_amount = (move_amount-1.)/2.*0.25
-        turn_amount *= np.pi/18.0
-        self._sim._sim.config.sim_cfg.allow_sliding = True
+        # Scale actions: by this point, should be [-1,1]
+        max_linear_speed  = kwargs.get('max_linear_speed',  0.25)
+        max_angular_speed = kwargs.get('max_angular_speed', 10)*np.pi/180
+        move_amount = (move_amount-1.)/2.*max_linear_speed
+        turn_amount *= max_angular_speed
+        
+        self._sim._sim.config.sim_cfg.allow_sliding = kwargs.get('allow_sliding', True)
 
         if abs(move_amount) < 0.1*0.25 and abs(turn_amount) < 0.1*np.pi/18.0:
             task.is_stop_called = True
