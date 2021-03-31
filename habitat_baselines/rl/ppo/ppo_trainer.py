@@ -579,7 +579,7 @@ class PPOTrainer(BaseRLTrainer):
         # Map location CPU is almost always better than mapping to a CUDA device.
         ckpt_dict = self.load_checkpoint(checkpoint_path, map_location="cpu")
 
-        if self.config.EVAL.USE_CKPT_CONFIG:
+        if self.config.EVAL.USE_CKPT_CONFIG and False:
             config = self._setup_eval_config(ckpt_dict["config"])
         else:
             config = self.config.clone()
@@ -600,8 +600,11 @@ class PPOTrainer(BaseRLTrainer):
         self.envs = construct_envs(config, get_env_class(config.ENV_NAME))
         self._setup_actor_critic_agent(ppo_cfg)
 
-        self.agent.load_state_dict(ckpt_dict["state_dict"])
+        # self.agent.load_state_dict(ckpt_dict["state_dict"])
         self.actor_critic = self.agent.actor_critic
+        self.actor_critic.load_state_dict(
+            ckpt_dict['state_dict']
+        )
 
         observations = self.envs.reset()
         batch = batch_obs(observations, device=self.device)

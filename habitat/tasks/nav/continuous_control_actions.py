@@ -50,7 +50,8 @@ class ContMove(SimulatorTaskAction):
         if not self._sim._sim.get_existing_object_ids():
             self._sim._sim.config.sim_cfg.allow_sliding = True
             obj_templates_mgr = self._sim._sim.get_object_template_manager()
-            locobot_template_id = obj_templates_mgr.load_object_configs('/nethome/nyokoyama3/habitat-sim/data/objects/locobot_merged')[0]
+            # locobot_template_id = obj_templates_mgr.load_object_configs('/nethome/nyokoyama3/habitat-sim/data/objects/locobot_merged')[0]
+            locobot_template_id = obj_templates_mgr.load_object_configs('/coc/pskynet3/nyokoyama3/aug26v2/habitat-sim/data/test_assets/objects/sphere')[0]
             self._robo_id_1 = self._sim._sim.add_object(locobot_template_id, self._sim._sim.agents[0].scene_node)
             self._sim._sim.set_object_motion_type(habitat_sim.physics.MotionType.KINEMATIC, 0)
 

@@ -129,11 +129,11 @@ class GaussianNet(nn.Module):
         mu = self.mu(x)
         std = self.std(x)
 
-        std = torch.clamp(std, min=1e-6, max=1)
+        # std = torch.clamp(std, min=1e-6, max=1)
 
-        # std = torch.clamp(std, min=-5, max=2)
+        std = torch.clamp(std, min=-5, max=2)
         # std = torch.clamp(std, min=-5, max=0)
-        # std = std.exp()
+        std = std.exp()
 
         return CustomNormal(mu, std)
 
@@ -382,11 +382,12 @@ def poll_checkpoint_folder(
     models_paths = list(
         filter(os.path.isfile, glob.glob(checkpoint_folder + "/*"))
     )
-    # models_paths.sort(key=os.path.getmtime)
-    # ind = previous_ckpt_ind + 1
-    # if ind < len(models_paths):
-    #     return models_paths[ind]
-    # return None
+    models_paths.sort(key=os.path.getmtime)
+    ind = previous_ckpt_ind + 1
+    if ind < len(models_paths):
+        return models_paths[ind]
+    return None
+    '''
     models_paths = list(
         filter(lambda x: not os.path.isfile(x+'.done') and not x.endswith('.done'), glob.glob(checkpoint_folder + "/*"))
     )
@@ -396,7 +397,7 @@ def poll_checkpoint_folder(
             pass
         return models_paths[0]
     return None
-
+    '''
 
 def generate_video(
     video_option: List[str],

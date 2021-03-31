@@ -40,4 +40,5 @@ DATASET:
   TYPE: PointNav-v1
   SPLIT: train
   # DATA_PATH: data/{split}/{split}.json.gz
-  DATA_PATH: /nethome/nyokoyama3/n/datasets/pointnav_gibson/v2/{split}/{split}.json.gz
+  # DATA_PATH: /nethome/nyokoyama3/n/datasets/pointnav_gibson/v2/{split}/{split}.json.gz
+  DATA_PATH: /nethome/nyokoyama3/n/datasets/pointnav_gibson/v2_bc/{split}/{split}.json.gz
