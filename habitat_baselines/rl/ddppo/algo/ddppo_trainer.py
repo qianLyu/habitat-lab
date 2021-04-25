@@ -94,12 +94,13 @@ class DDPPOTrainer(PPOTrainer):
             )
 
         if self.config.RL.DDPPO.pretrained:
-            self.actor_critic.load_state_dict(
-                {
-                    k[len("actor_critic.") :]: v
-                    for k, v in pretrained_state["state_dict"].items()
-                }
-            )
+            # self.actor_critic.load_state_dict(
+            #     {
+            #         k[len("actor_critic.") :]: v
+            #         for k, v in pretrained_state["state_dict"].items()
+            #     }
+            # )
+            self.actor_critic.load_state_dict(pretrained_state['state_dict'])
         elif self.config.RL.DDPPO.pretrained_encoder:
             prefix = "actor_critic.net.visual_encoder."
             self.actor_critic.net.visual_encoder.load_state_dict(
