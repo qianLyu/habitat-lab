@@ -1,31 +1,87 @@
+# ENVIRONMENT:
+#   MAX_EPISODE_STEPS: 500
+# SIMULATOR:
+#   AGENT_0:
+#     SENSORS: ['RGB_SENSOR']
+#   HABITAT_SIM_V0:
+#     GPU_DEVICE_ID: 0
+#   RGB_SENSOR:
+#     WIDTH: 256
+#     HEIGHT: 256
+#   DEPTH_SENSOR:
+#     WIDTH: 256
+#     HEIGHT: 256
+#   NUM_PEOPLE: 0
+    
+# TASK:
+#   TYPE: Nav-v0
+#   SUCCESS_DISTANCE: 0.2
+
+#   SENSORS: ['POINTGOAL_WITH_GPS_COMPASS_SENSOR']
+#   POINTGOAL_WITH_GPS_COMPASS_SENSOR:
+#     GOAL_FORMAT: "POLAR"
+#     DIMENSIONALITY: 2
+#   GOAL_SENSOR_UUID: pointgoal_with_gps_compass
+
+#   MEASUREMENTS: ['DISTANCE_TO_GOAL', 'SUCCESS', 'SPL']
+#   SUCCESS:
+#     SUCCESS_DISTANCE: 0.2
+
+# DATASET:
+#   TYPE: PointNav-v1
+#   SPLIT: train
+#   DATA_PATH: data/datasets/pointnav/gibson/v1/{split}/{split}.json.gz
+
+
 ENVIRONMENT:
   MAX_EPISODE_STEPS: 500
 SIMULATOR:
+  HABITAT_SIM_V0:
+    ALLOW_SLIDING: False
+  TYPE: 'iGibsonSocialNav'
   AGENT_0:
     SENSORS: ['RGB_SENSOR']
+    HEIGHT: 0.88
+    RADIUS: 0.20
   HABITAT_SIM_V0:
     GPU_DEVICE_ID: 0
   RGB_SENSOR:
-    WIDTH: 256
-    HEIGHT: 256
+    WIDTH: 320
+    HEIGHT: 180
+    HFOV: 69  # horizontal field of view in degrees
+    ORIENTATION: [-0.3490659, 0, 0]  # Euler's angles
   DEPTH_SENSOR:
-    WIDTH: 256
-    HEIGHT: 256
+    WIDTH: 320
+    HEIGHT: 180
+    HFOV: 69  # horizontal field of view in degrees
+    ORIENTATION: [-0.3490659, 0, 0]  # Euler's angles
+  NUM_PEOPLE: 0
 TASK:
-  TYPE: Nav-v0
-  SUCCESS_DISTANCE: 0.2
-
+  TYPE: SocialNav-v0
+  # TYPE: Nav-v0
+  SUCCESS_DISTANCE: 0.2  
   SENSORS: ['POINTGOAL_WITH_GPS_COMPASS_SENSOR']
   POINTGOAL_WITH_GPS_COMPASS_SENSOR:
     GOAL_FORMAT: "POLAR"
     DIMENSIONALITY: 2
-  GOAL_SENSOR_UUID: pointgoal_with_gps_compass
-
-  MEASUREMENTS: ['DISTANCE_TO_GOAL', 'SUCCESS', 'SPL']
+  GOAL_SENSOR_UUID: pointgoal_with_gps_compass  
+  MEASUREMENTS: ['DISTANCE_TO_GOAL', 'SUCCESS', 'SPL', 'SCT', 'HUMAN_COLLISION']
   SUCCESS:
     SUCCESS_DISTANCE: 0.2
+  TOP_DOWN_MAP:
+  #   TYPE: "SocialTopDownMap"
+    TYPE: "TopDownMap"
+  SCT:
+    TYPE: "SCT"
+    HOLONOMIC_VELOCITY: 0.5
+    TIME_STEP: 0.1
+  ACTIONS:
+    VELOCITY_CONTROL:
+      LIN_VEL_RANGE: [0.0, 0.5]  # meters per sec
+      ANG_VEL_RANGE: [-90.0, 90.0]  # deg per sec
+      TIME_STEP: 0.1  # deg per sec
 
 DATASET:
   TYPE: PointNav-v1
   SPLIT: train
-  DATA_PATH: data/datasets/pointnav/gibson/v1/{split}/{split}.json.gz
+  DATA_PATH: /srv/datasets/habitat-sim-datasets/pointnav/gibson/v1/{split}/{split}.json.gz 
