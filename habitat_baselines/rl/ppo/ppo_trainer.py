@@ -19,6 +19,7 @@ from torch import nn
 from torch.optim.lr_scheduler import LambdaLR
 
 from habitat import Config, VectorEnv, logger
+from habitat.core.spaces import ActionSpace, EmptySpace
 from habitat.utils import profiling_wrapper
 from habitat.utils.visualizations.utils import observations_to_image
 from habitat_baselines.common.base_trainer import BaseRLTrainer
@@ -32,22 +33,25 @@ from habitat_baselines.common.obs_transformers import (
 from habitat_baselines.common.rollout_storage import RolloutStorage
 from habitat_baselines.common.tensorboard_utils import TensorboardWriter
 from habitat_baselines.rl.ddppo.algo import DDPPO
-from habitat_baselines.rl.ddppo.algo.ddp_utils import (
+from habitat_baselines.rl.ddppo.ddp_utils import (
     EXIT,
-    REQUEUE,
     add_signal_handlers,
     get_distrib_size,
     init_distrib_slurm,
     is_slurm_batch_job,
-    load_interrupted_state,
+    load_resume_state,
     rank0_only,
     requeue_job,
-    save_interrupted_state,
+    save_resume_state,
+)
+from habitat_baselines.rl.ddppo.policy import (  # noqa: F401.
+    PointNavResNetPolicy,
 )
 from habitat_baselines.rl.ppo import PPO
 from habitat_baselines.rl.ppo.policy import Policy
 from habitat_baselines.utils.common import (
     ObservationBatchingCache,
+    action_to_velocity_control,
     batch_obs,
     generate_video,
 )
@@ -69,10 +73,21 @@ class PPOTrainer(BaseRLTrainer):
     agent: PPO
     actor_critic: Policy
 
-    def __init__(self, config=None):
-        interrupted_state = load_interrupted_state()
-        if interrupted_state is not None:
-            config = interrupted_state["config"]
+    def __init__(self, config=None, runtype='train'):
+        if runtype == 'train':
+            resume_state = load_resume_state(config)
+            self.OVERRIDE_TOTAL_NUM_STEPS = None
+            if resume_state is not None:
+                if 'OVERRIDE' in config:
+                    self.OVERRIDE_NUM_CHECKPOINTS = config.OVERRIDE.NUM_CHECKPOINTS
+                    self.OVERRIDE_TOTAL_NUM_STEPS = config.OVERRIDE.TOTAL_NUM_STEPS
+                    config = resume_state["config"]
+                    config.defrost()
+                    config.NUM_CHECKPOINTS = self.OVERRIDE_NUM_CHECKPOINTS
+                    config.TOTAL_NUM_STEPS = self.OVERRIDE_TOTAL_NUM_STEPS
+                    config.freeze()
+                else:
+                    config = resume_state["config"]
 
         super().__init__(config)
         self.actor_critic = None
@@ -88,6 +103,17 @@ class PPOTrainer(BaseRLTrainer):
         # greater than 1
         self._is_distributed = get_distrib_size()[2] > 1
         self._obs_batching_cache = ObservationBatchingCache()
+
+        self.discrete_actions = (
+            self.config.TASK_CONFIG.TASK.ACTIONS.VELOCITY_CONTROL.DISCRETE_ACTIONS
+        )
+        if (
+            config.RL.POLICY.action_distribution_type == "gaussian"
+            or len(self.discrete_actions) > 0
+        ):
+            config.defrost()
+            config.TASK_CONFIG.TASK.POSSIBLE_ACTIONS = ["VELOCITY_CONTROL"]
+            config.freeze()
 
     @property
     def obs_space(self):
@@ -130,8 +156,29 @@ class PPOTrainer(BaseRLTrainer):
         observation_space = apply_obs_transforms_obs_space(
             observation_space, self.obs_transforms
         )
+        from gym.spaces import Dict, Box
+        if self.config.TASK_CONFIG.SIMULATOR.get('PEOPLE_MASK', False):
+            observation_space = Dict(
+                {
+                    'depth': Box(
+                        low=0., high=1., shape=(
+                            self.envs.observation_spaces[0].spaces['depth'].shape[0],
+                            self.envs.observation_spaces[0].spaces['depth'].shape[1],
+                            2,
+                        )
+                    ),
+                    'pointgoal_with_gps_compass': self.envs.observation_spaces[0].spaces['pointgoal_with_gps_compass']
+                }
+            )
+        else:
+            observation_space = Dict(
+                {
+                    'depth': self.envs.observation_spaces[0].spaces['depth'],
+                    'pointgoal_with_gps_compass': self.envs.observation_spaces[0].spaces['pointgoal_with_gps_compass']
+                }
+            )
         self.actor_critic = policy.from_config(
-            self.config, observation_space, self.envs.action_spaces[0]
+            self.config, observation_space, self.policy_action_space
         )
         self.obs_space = observation_space
         self.actor_critic.to(self.device)
@@ -238,6 +285,28 @@ class PPOTrainer(BaseRLTrainer):
 
         self._init_envs()
 
+        if self.config.RL.POLICY.action_distribution_type == "gaussian":
+            self.policy_action_space = ActionSpace(
+                {
+                    "linear_velocity": EmptySpace(),
+                    "angular_velocity": EmptySpace(),
+                }
+            )
+            action_shape = 2
+            discrete_actions = False
+        else:
+            if len(self.discrete_actions) > 0:
+                self.policy_action_space = ActionSpace(
+                    {
+                        str(i): EmptySpace()
+                        for i in range(len(self.discrete_actions))
+                    }
+                )
+            else:
+                self.policy_action_space = self.envs.action_spaces[0]
+            action_shape = 1
+            discrete_actions = True
+
         ppo_cfg = self.config.RL.PPO
         if torch.cuda.is_available():
             self.device = torch.device("cuda", self.config.TORCH_GPU_ID)
@@ -274,14 +343,17 @@ class PPOTrainer(BaseRLTrainer):
             )
 
         self._nbuffers = 2 if ppo_cfg.use_double_buffered_sampler else 1
+
         self.rollouts = RolloutStorage(
             ppo_cfg.num_steps,
             self.envs.num_envs,
             obs_space,
-            self.envs.action_spaces[0],
+            self.policy_action_space,
             ppo_cfg.hidden_size,
             num_recurrent_layers=self.actor_critic.net.num_recurrent_layers,
             is_double_buffered=ppo_cfg.use_double_buffered_sampler,
+            action_shape=action_shape,
+            discrete_actions=discrete_actions,
         )
         self.rollouts.to(self.device)
 
@@ -431,7 +503,21 @@ class PPOTrainer(BaseRLTrainer):
         for index_env, act in zip(
             range(env_slice.start, env_slice.stop), actions.unbind(0)
         ):
-            self.envs.async_step_at(index_env, act.item())
+            if self.config.RL.POLICY.action_distribution_type == "gaussian":
+                step_action = action_to_velocity_control(
+                    act, num_steps=self.num_steps_done
+                )
+            elif len(self.discrete_actions) > 0:
+                act2 = torch.tensor(
+                    self.discrete_actions[act.item()],
+                    device='cpu',
+                )
+                step_action = action_to_velocity_control(
+                    act2, num_steps=self.num_steps_done
+                )
+            else:
+                step_action = act.item()
+            self.envs.async_step_at(index_env, step_action)
 
         self.env_time += time.time() - t_step_env
 
@@ -690,28 +776,29 @@ class PPOTrainer(BaseRLTrainer):
             lr_lambda=lambda x: 1 - self.percent_done(),
         )
 
-        interrupted_state = load_interrupted_state()
-        if interrupted_state is not None:
-            self.agent.load_state_dict(interrupted_state["state_dict"])
-            self.agent.optimizer.load_state_dict(
-                interrupted_state["optim_state"]
-            )
-            lr_scheduler.load_state_dict(interrupted_state["lr_sched_state"])
+        resume_state = load_resume_state(self.config)
+        if resume_state is not None:
+            self.agent.load_state_dict(resume_state["state_dict"])
+            self.agent.optimizer.load_state_dict(resume_state["optim_state"])
+            lr_scheduler.load_state_dict(resume_state["lr_sched_state"])
 
-            requeue_stats = interrupted_state["requeue_stats"]
+            requeue_stats = resume_state["requeue_stats"]
             self.env_time = requeue_stats["env_time"]
             self.pth_time = requeue_stats["pth_time"]
             self.num_steps_done = requeue_stats["num_steps_done"]
             self.num_updates_done = requeue_stats["num_updates_done"]
-            self._last_checkpoint_percent = requeue_stats[
-                "_last_checkpoint_percent"
-            ]
+            if self.OVERRIDE_TOTAL_NUM_STEPS is None:
+                self._last_checkpoint_percent = requeue_stats[
+                    "_last_checkpoint_percent"
+                ]
+            else:
+                self._last_checkpoint_percent = self.percent_done()
             count_checkpoints = requeue_stats["count_checkpoints"]
             prev_time = requeue_stats["prev_time"]
-
-            self._last_checkpoint_percent = requeue_stats[
-                "_last_checkpoint_percent"
-            ]
+            self.running_episode_stats = requeue_stats["running_episode_stats"]
+            self.window_episode_stats.update(
+                requeue_stats["window_episode_stats"]
+            )
 
         ppo_cfg = self.config.RL.PPO
 
@@ -731,32 +818,37 @@ class PPOTrainer(BaseRLTrainer):
                         1 - self.percent_done()
                     )
 
+                if rank0_only() and self._should_save_resume_state():
+                    requeue_stats = dict(
+                        env_time=self.env_time,
+                        pth_time=self.pth_time,
+                        count_checkpoints=count_checkpoints,
+                        num_steps_done=self.num_steps_done,
+                        num_updates_done=self.num_updates_done,
+                        _last_checkpoint_percent=self._last_checkpoint_percent,
+                        prev_time=(time.time() - self.t_start) + prev_time,
+                        running_episode_stats=self.running_episode_stats,
+                        window_episode_stats=dict(self.window_episode_stats),
+                    )
+
+                    save_resume_state(
+                        dict(
+                            state_dict=self.agent.state_dict(),
+                            optim_state=self.agent.optimizer.state_dict(),
+                            lr_sched_state=lr_scheduler.state_dict(),
+                            config=self.config,
+                            requeue_stats=requeue_stats,
+                        ),
+                        self.config,
+                    )
+
                 if EXIT.is_set():
                     profiling_wrapper.range_pop()  # train update
 
                     self.envs.close()
 
-                    if REQUEUE.is_set() and rank0_only():
-                        requeue_stats = dict(
-                            env_time=self.env_time,
-                            pth_time=self.pth_time,
-                            count_checkpoints=count_checkpoints,
-                            num_steps_done=self.num_steps_done,
-                            num_updates_done=self.num_updates_done,
-                            _last_checkpoint_percent=self._last_checkpoint_percent,
-                            prev_time=(time.time() - self.t_start) + prev_time,
-                        )
-                        save_interrupted_state(
-                            dict(
-                                state_dict=self.agent.state_dict(),
-                                optim_state=self.agent.optimizer.state_dict(),
-                                lr_sched_state=lr_scheduler.state_dict(),
-                                config=self.config,
-                                requeue_stats=requeue_stats,
-                            )
-                        )
-
                     requeue_job()
+
                     return
 
                 self.agent.eval()
@@ -864,7 +956,10 @@ class PPOTrainer(BaseRLTrainer):
 
         if len(self.config.VIDEO_OPTION) > 0:
             config.defrost()
-            config.TASK_CONFIG.TASK.MEASUREMENTS.append("TOP_DOWN_MAP")
+            if config.TASK_CONFIG.TASK.TYPE == 'InteractiveNav-v0':
+                config.TASK_CONFIG.TASK.MEASUREMENTS.append("TOP_DOWN_MAP")
+            else:
+                config.TASK_CONFIG.TASK.MEASUREMENTS.append("SOCIAL_TOP_DOWN_MAP")
             config.TASK_CONFIG.TASK.MEASUREMENTS.append("COLLISIONS")
             config.freeze()
 
@@ -872,6 +967,29 @@ class PPOTrainer(BaseRLTrainer):
             logger.info(f"env config: {config}")
 
         self._init_envs(config)
+
+        if self.config.RL.POLICY.action_distribution_type == "gaussian":
+            self.policy_action_space = ActionSpace(
+                {
+                    "linear_velocity": EmptySpace(),
+                    "angular_velocity": EmptySpace(),
+                }
+            )
+            action_shape = 2
+            action_type = torch.float
+        else:
+            if len(self.discrete_actions) > 0:
+                self.policy_action_space = ActionSpace(
+                    {
+                        str(i): EmptySpace()
+                        for i in range(len(self.discrete_actions))
+                    }
+                )
+            else:
+                self.policy_action_space = self.envs.action_spaces[0]
+            action_shape = 1
+            action_type = torch.long
+
         self._setup_actor_critic_agent(ppo_cfg)
 
         self.agent.load_state_dict(ckpt_dict["state_dict"])
@@ -895,9 +1013,9 @@ class PPOTrainer(BaseRLTrainer):
         )
         prev_actions = torch.zeros(
             self.config.NUM_ENVIRONMENTS,
-            1,
+            action_shape,
             device=self.device,
-            dtype=torch.long,
+            dtype=action_type,
         )
         not_done_masks = torch.zeros(
             self.config.NUM_ENVIRONMENTS,
@@ -947,17 +1065,33 @@ class PPOTrainer(BaseRLTrainer):
                     test_recurrent_hidden_states,
                     prev_actions,
                     not_done_masks,
-                    deterministic=False,
+                    # deterministic=False,
+                    deterministic=True,
                 )
 
                 prev_actions.copy_(actions)  # type: ignore
-
             # NB: Move actions to CPU.  If CUDA tensors are
             # sent in to env.step(), that will create CUDA contexts
             # in the subprocesses.
             # For backwards compatibility, we also call .item() to convert to
             # an int
-            step_data = [a.item() for a in actions.to(device="cpu")]
+            if self.config.RL.POLICY.action_distribution_type == "gaussian":
+                step_data = [
+                    action_to_velocity_control(a)
+                    for a in actions.to(device="cpu")
+                ]
+            elif len(self.discrete_actions) > 0:
+                step_data = [
+                    action_to_velocity_control(
+                        torch.tensor(
+                            self.discrete_actions[a.item()],
+                            device='cpu',
+                        )
+                    )
+                    for a in actions.to(device="cpu")
+                ]
+            else:
+                step_data = [a.item() for a in actions.to(device="cpu")]
 
             outputs = self.envs.step(step_data)
 
@@ -1017,6 +1151,7 @@ class PPOTrainer(BaseRLTrainer):
                             checkpoint_idx=checkpoint_index,
                             metrics=self._extract_scalars_from_info(infos[i]),
                             tb_writer=writer,
+                            fps=30,
                         )
 
                         rgb_frames[i] = []
@@ -1057,12 +1192,15 @@ class PPOTrainer(BaseRLTrainer):
                 / num_episodes
             )
 
-        for k, v in aggregated_stats.items():
-            logger.info(f"Average episode {k}: {v:.4f}")
-
         step_id = checkpoint_index
         if "extra_state" in ckpt_dict and "step" in ckpt_dict["extra_state"]:
             step_id = ckpt_dict["extra_state"]["step"]
+
+        with open(checkpoint_path+'.txt', 'w') as f:
+            f.write(f"{step_id}\n")
+            for k, v in aggregated_stats.items():
+                logger.info(f"Average episode {k}: {v:.4f}")
+                f.write(f"Average episode {k}: {v:.4f}\n")
 
         writer.add_scalars(
             "eval_reward",

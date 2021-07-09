@@ -68,11 +68,28 @@ _C.RL.REWARD_MEASURE = "distance_to_goal"
 _C.RL.SUCCESS_MEASURE = "spl"
 _C.RL.SUCCESS_REWARD = 2.5
 _C.RL.SLACK_REWARD = -0.01
+_C.RL.FULL_GEODESIC_DECAY = -1.0
+_C.RL.COLLISION_PENALTY = 0.0
+_C.RL.BACKWARDS_PENALTY = 0.0
+# -----------------------------------------------------------------------------
+# preemption CONFIG
+# -----------------------------------------------------------------------------
+_C.RL.preemption = CN()
+# Append the slurm job ID to the resume state filename if running a slurm job
+# This is useful when you want to have things from a different job but same
+# same checkpoint dir not resume.
+_C.RL.preemption.append_slurm_job_id = False
+# Number of gradient updates between saving the resume state
+_C.RL.preemption.save_resume_state_interval = 100
+# Save resume states only when running with slurm
+# This is nice if you don't want debug jobs to resume
+_C.RL.preemption.save_state_batch_only = False
 # -----------------------------------------------------------------------------
 # POLICY CONFIG
 # -----------------------------------------------------------------------------
 _C.RL.POLICY = CN()
 _C.RL.POLICY.name = "PointNavResNetPolicy"
+_C.RL.POLICY.action_distribution_type = "categorical"
 # -----------------------------------------------------------------------------
 # OBS_TRANSFORMS CONFIG
 # -----------------------------------------------------------------------------

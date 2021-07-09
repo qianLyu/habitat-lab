@@ -16,6 +16,7 @@ from habitat import Config, logger
 from habitat.core.env import Env, RLEnv
 from habitat.core.vector_env import VectorEnv
 from habitat_baselines.common.tensorboard_utils import TensorboardWriter
+from habitat_baselines.rl.ddppo.ddp_utils import SAVE_STATE, is_slurm_batch_job
 from habitat_baselines.utils.common import (
     get_checkpoint_id,
     poll_checkpoint_folder,
@@ -51,7 +52,9 @@ class BaseTrainer:
 
         ckpt_cmd_opts = checkpoint_config.CMD_TRAILING_OPTS
         eval_cmd_opts = config.CMD_TRAILING_OPTS
-
+        checkpoint_config.defrost()
+        checkpoint_config.TOTAL_NUM_STEPS = float(checkpoint_config.TOTAL_NUM_STEPS)
+        checkpoint_config.freeze()
         try:
             config.merge_from_other_cfg(checkpoint_config)
             config.merge_from_other_cfg(self.config)
@@ -201,6 +204,8 @@ class BaseRLTrainer(BaseTrainer):
         if self.config.NUM_UPDATES != -1:
             return self.num_updates_done / self.config.NUM_UPDATES
         else:
+            if self.OVERRIDE_TOTAL_NUM_STEPS is not None:
+                return self.num_steps_done / self.OVERRIDE_TOTAL_NUM_STEPS
             return self.num_steps_done / self.config.TOTAL_NUM_STEPS
 
     def is_done(self) -> bool:
@@ -210,6 +215,11 @@ class BaseRLTrainer(BaseTrainer):
         needs_checkpoint = False
         if self.config.NUM_CHECKPOINTS != -1:
             checkpoint_every = 1 / self.config.NUM_CHECKPOINTS
+            print('ckpt stuff')
+            print(
+                self._last_checkpoint_percent + checkpoint_every,
+                self.percent_done()
+            )
             if (
                 self._last_checkpoint_percent + checkpoint_every
                 < self.percent_done()
@@ -218,10 +228,25 @@ class BaseRLTrainer(BaseTrainer):
                 self._last_checkpoint_percent = self.percent_done()
         else:
             needs_checkpoint = (
-                self.num_steps_done % self.config.CHECKPOINT_INTERVAL
+                self.num_updates_done % self.config.CHECKPOINT_INTERVAL
             ) == 0
 
         return needs_checkpoint
+
+    def _should_save_resume_state(self) -> bool:
+        return SAVE_STATE.is_set() or (
+            (
+                not self.config.RL.preemption.save_state_batch_only
+                or is_slurm_batch_job()
+            )
+            and (
+                (
+                    int(self.num_updates_done + 1)
+                    % self.config.RL.preemption.save_resume_state_interval
+                )
+                == 0
+            )
+        )
 
     @property
     def flush_secs(self):

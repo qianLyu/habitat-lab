@@ -9,7 +9,10 @@ from typing import Dict
 
 import attr
 
-import habitat_sim
+try:
+    import habitat_sim
+except ModuleNotFoundError:
+    pass
 from habitat.core.registry import registry
 from habitat.core.simulator import ActionSpaceConfiguration
 from habitat.core.utils import Singleton
@@ -187,5 +190,15 @@ class HabitatSimPyRobotActionSpaceConfiguration(ActionSpaceConfiguration):
             "_right": habitat_sim.ActionSpec(
                 "turn_right",
                 habitat_sim.ActuationSpec(amount=self.config.TURN_ANGLE),
+            ),
+        }
+
+
+@registry.register_action_space_configuration(name="velocitycontrol")
+class HabitatSimVelocityCtrlActionSpaceConfiguration(ActionSpaceConfiguration):
+    def get(self):
+        return {
+            HabitatSimActions.VELOCITY_CTRL: habitat_sim.ActionSpec(
+                "velocity_control"
             ),
         }
