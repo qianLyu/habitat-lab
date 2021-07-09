@@ -48,7 +48,7 @@ class PointNavResNetPolicy(Policy):
         backbone: str = "resnet18",
         normalize_visual_inputs: bool = False,
         force_blind_policy: bool = False,
-        action_distribution_type: str = "categorical",
+        action_distribution_type: str = "gaussian", #"categorical",
         **kwargs
     ):
         discrete_actions = action_distribution_type == "categorical"
