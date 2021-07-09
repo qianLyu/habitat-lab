@@ -25,7 +25,7 @@ from habitat_baselines.utils.common import CategoricalNet, GaussianNet
 
 class Policy(nn.Module, metaclass=abc.ABCMeta):
     def __init__(
-        self, net, dim_actions, action_distribution_type="gaussian" #"categorical"
+        self, net, dim_actions, action_distribution_type= "categorical"
     ):
         super().__init__()
         self.net = net

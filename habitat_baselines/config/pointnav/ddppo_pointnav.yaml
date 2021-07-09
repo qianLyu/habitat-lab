@@ -1,17 +1,17 @@
-VERBOSE: False
+TENSORBOARD_DIR:       "/srv/share3/qluo3/g4p_no_ppl/tb"
+VIDEO_DIR:             "/srv/share3/qluo3/g4p_no_ppl/videos"
+EVAL_CKPT_PATH_DIR:    "/srv/share3/qluo3/g4p_no_ppl/new_checkpoints"
+CHECKPOINT_FOLDER:     "/srv/share3/qluo3/g4p_no_ppl/new_checkpoints"
 BASE_TASK_CONFIG_PATH: "configs/tasks/pointnav_gibson.yaml"
+VERBOSE: False
 TRAINER_NAME: "ddppo"
 ENV_NAME: "NavRLEnv"
 SIMULATOR_GPU_ID: 0
 TORCH_GPU_ID: 0
 VIDEO_OPTION: []
-TENSORBOARD_DIR: "tb"
-VIDEO_DIR: "video_dir"
 TEST_EPISODE_COUNT: -1
-EVAL_CKPT_PATH_DIR: "data/new_checkpoints"
 NUM_ENVIRONMENTS: 8 #4
 SENSORS: ["DEPTH_SENSOR"]
-CHECKPOINT_FOLDER: "data/new_checkpoints"
 NUM_UPDATES: -1
 TOTAL_NUM_STEPS: 30e7 #2.5e9
 LOG_INTERVAL: 10
@@ -70,6 +70,6 @@ RL:
     reset_critic: True
 
     # Model parameters
-    backbone: resnet50
+    backbone: resnet18
     rnn_type: LSTM
     num_recurrent_layers: 2
