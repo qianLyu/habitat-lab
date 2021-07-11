@@ -36,7 +36,7 @@ class iGibsonInteractiveNav(HabitatSim):
         super().__init__(config=config)
         obj_templates_mgr = self.get_object_template_manager()
         self.obj_template_ids = obj_templates_mgr.load_configs(
-            "/private/home/naokiyokoyama/gc/datasets/object_meshes"
+            "/coc/testnvme/nyokoyama3/flash_datasets/igibson_challenge/person_meshes" #"/private/home/naokiyokoyama/gc/datasets/object_meshes"
         )
         self.social_nav = False
         self.interactive_nav = True
