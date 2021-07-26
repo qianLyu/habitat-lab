@@ -144,6 +144,6 @@ class PointNavDatasetV1(Dataset):
                 for path in episode.shortest_paths:
                     for p_index, point in enumerate(path):
                         path[p_index] = ShortestPathPoint(**point)
-            if episode.scene_id == ("data/scene_datasets/gibson/Anaheim.glb") or episode.scene_id == ("data/scene_datasets/gibson/Hambleton.glb") \
-                or episode.scene_id == ("data/scene_datasets/gibson/Mobridge.glb") or episode.scene_id == ("data/scene_datasets/gibson/Springhill.glb"):  
-                self.episodes.append(episode)
+            # if episode.scene_id == ("data/scene_datasets/gibson/Anaheim.glb") or episode.scene_id == ("data/scene_datasets/gibson/Hambleton.glb") \
+            #     or episode.scene_id == ("data/scene_datasets/gibson/Mobridge.glb") or episode.scene_id == ("data/scene_datasets/gibson/Springhill.glb"):  
+            self.episodes.append(episode)
