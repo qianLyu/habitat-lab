@@ -1007,8 +1007,7 @@ class PPOTrainer(BaseRLTrainer):
         self.actor_critic = self.agent.actor_critic
 
         observations = self.envs.reset()
-        print("11111111111111", observations)
-        observations[:][:]['depth'] = self.random_crop(observations[:][:]['depth']) #crop depth image
+        observations[0]['depth'] = self.random_crop(observations[0]['depth']) #crop depth image
         batch = batch_obs(
             observations, device=self.device, cache=self._obs_batching_cache
         )
@@ -1112,7 +1111,7 @@ class PPOTrainer(BaseRLTrainer):
                 list(x) for x in zip(*outputs)
             ]
             
-            observations[:][:]['depth'] = self.random_crop(observations[:][:]['depth']) #crop depth image
+            observations[0]['depth'] = self.random_crop(observations[0]['depth']) #crop depth image
             batch = batch_obs(
                 observations,
                 device=self.device,
