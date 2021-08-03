@@ -1110,6 +1110,7 @@ class PPOTrainer(BaseRLTrainer):
             observations, rewards_l, dones, infos = [
                 list(x) for x in zip(*outputs)
             ]
+            
             print("11111111111111", observations)
 
             #observations[:][:]['depth'] = self.random_crop(observations[:][:]['depth']) #crop depth image
