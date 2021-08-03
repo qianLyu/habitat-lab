@@ -191,6 +191,16 @@ def draw_human_collision(view: np.ndarray, alpha: float = 0.4) -> np.ndarray:
 
     return view
 
+def random_crop(imgs, size=160):
+    h, w, c = imgs.shape
+    # w1 = torch.randint(0, w - size + 1, (n,))
+    # h1 = torch.randint(0, h - size + 1, (n,))
+    w1 = 1
+    h1 = 10
+    cropped = np.array((size, size, c),dtype=imgs.dtype) 
+
+    cropped = imgs[h1:h1 + size, w1:w1 + size, :]
+    return cropped
 
 def observations_to_image(observation: Dict, info: Dict) -> np.ndarray:
     r"""Generate image of single frame from observation and info
@@ -213,6 +223,7 @@ def observations_to_image(observation: Dict, info: Dict) -> np.ndarray:
 
     # draw depth map if observation has depth info
     if "depth" in observation:
+        observation['depth'] = random_crop(observation['depth']) #crop depth image
         depth_map = observation["depth"].squeeze() * 255.0
         if not isinstance(depth_map, np.ndarray):
             depth_map = depth_map.cpu().numpy()
