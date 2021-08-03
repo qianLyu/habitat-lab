@@ -197,7 +197,7 @@ def random_crop(imgs, size=160):
     # h1 = torch.randint(0, h - size + 1, (n,))
     w1 = 1
     h1 = 10
-    cropped = np.array((size, size, c),dtype=imgs.dtype) 
+    cropped = np.array((size, size, c)) 
 
     cropped = imgs[h1:h1 + size, w1:w1 + size, :]
     return cropped
