@@ -934,6 +934,7 @@ class PPOTrainer(BaseRLTrainer):
 
     def random_crop(self, imgs, size=160):
         c, h, w = imgs.shape
+        print(c, h, w)
         # w1 = torch.randint(0, w - size + 1, (n,))
         # h1 = torch.randint(0, h - size + 1, (n,))
         w1 = 1
