@@ -921,15 +921,26 @@ class PPOTrainer(BaseRLTrainer):
 
             self.envs.close()
 
+    # def random_crop(self, imgs, size=160):
+    #     n, c, h, w = imgs.shape
+    #     w1 = torch.randint(0, w - size + 1, (n,))
+    #     h1 = torch.randint(0, h - size + 1, (n,))
+    #     w1 = 1
+    #     h1 = 10
+    #     cropped = torch.empty((n, c, size, size),dtype=imgs.dtype, device=imgs.device)
+    #     for i, (img, w11, h11) in enumerate(zip(imgs, w1, h1)):
+    #         cropped[i][:] = img[:, h11:h11 + size, w11:w11 + size]
+    #     return cropped
+
     def random_crop(self, imgs, size=160):
-        n, c, h, w = imgs.shape
-        w1 = torch.randint(0, w - size + 1, (n,))
-        h1 = torch.randint(0, h - size + 1, (n,))
+        c, h, w = imgs.shape
+        # w1 = torch.randint(0, w - size + 1, (n,))
+        # h1 = torch.randint(0, h - size + 1, (n,))
         w1 = 1
         h1 = 10
-        cropped = torch.empty((n, c, size, size),dtype=imgs.dtype, device=imgs.device)
-        for i, (img, w11, h11) in enumerate(zip(imgs, w1, h1)):
-            cropped[i][:] = img[:, h11:h11 + size, w11:w11 + size]
+        cropped = torch.empty((c, size, size),dtype=imgs.dtype, device=imgs.device)
+
+        cropped[:] = imgs[:, h1:h1 + size, w1:w1 + size]
         return cropped
 
     def _eval_checkpoint(
