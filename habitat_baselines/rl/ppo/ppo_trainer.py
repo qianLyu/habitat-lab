@@ -938,7 +938,7 @@ class PPOTrainer(BaseRLTrainer):
         # h1 = torch.randint(0, h - size + 1, (n,))
         w1 = 1
         h1 = 10
-        cropped = torch.empty((c, size, size),dtype=imgs.dtype, device=imgs.device)
+        cropped = np.array((c, size, size),dtype=imgs.dtype) 
 
         cropped[:] = imgs[:, h1:h1 + size, w1:w1 + size]
         return cropped
