@@ -921,6 +921,15 @@ class PPOTrainer(BaseRLTrainer):
 
             self.envs.close()
 
+    def random_crop(self, imgs, size=160):
+        n, c, h, w = imgs.shape
+        w1 = torch.randint(0, w - size + 1, (n,))
+        h1 = torch.randint(0, h - size + 1, (n,))
+        cropped = torch.empty((n, c, size, size),dtype=imgs.dtype, device=imgs.device)
+        for i, (img, w11, h11) in enumerate(zip(imgs, w1, h1)):
+            cropped[i][:] = img[:, h11:h11 + size, w11:w11 + size]
+        return cropped
+
     def _eval_checkpoint(
         self,
         checkpoint_path: str,
@@ -996,6 +1005,7 @@ class PPOTrainer(BaseRLTrainer):
         self.actor_critic = self.agent.actor_critic
 
         observations = self.envs.reset()
+        observations['depth'] = self.random_crop(observations['depth']) #crop depth image
         batch = batch_obs(
             observations, device=self.device, cache=self._obs_batching_cache
         )
@@ -1098,6 +1108,7 @@ class PPOTrainer(BaseRLTrainer):
             observations, rewards_l, dones, infos = [
                 list(x) for x in zip(*outputs)
             ]
+            observations['depth'] = self.random_crop(observations['depth']) #crop depth image
             batch = batch_obs(
                 observations,
                 device=self.device,
