@@ -933,15 +933,14 @@ class PPOTrainer(BaseRLTrainer):
     #     return cropped
 
     def random_crop(self, imgs, size=160):
-        c, h, w = imgs.shape
-        print(c, h, w)
+        h, w, c = imgs.shape
         # w1 = torch.randint(0, w - size + 1, (n,))
         # h1 = torch.randint(0, h - size + 1, (n,))
         w1 = 1
         h1 = 10
-        cropped = np.array((c, size, size),dtype=imgs.dtype) 
+        cropped = np.array((size, size, c),dtype=imgs.dtype) 
 
-        cropped[:] = imgs[:, h1:h1 + size, w1:w1 + size]
+        cropped = imgs[h1:h1 + size, w1:w1 + size, :]
         return cropped
 
     def _eval_checkpoint(
