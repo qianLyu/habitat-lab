@@ -4,9 +4,7 @@ import glob
 import json
 import numpy as np
 
-from collections import defaultdict
 from os import path as osp
-from matplotlib import pyplot as plt
 
 VALIDATION_SCENE_IDS = [4, 0, 3, 5]
 
@@ -24,14 +22,8 @@ json_dir = args.json_dir
 # Gather paths to all json files
 json_paths = glob.glob(osp.join(json_dir, '*.json'))
 
-
-# Recursive defaultdict of defaultdicts
-def rec_dd():
-    return defaultdict(rec_dd)
-
-
 # Dict of dicts
-all_j_data = rec_dd()
+all_j_data = {}
 
 # Load data from all json files
 print('Parsing all jsons...')
