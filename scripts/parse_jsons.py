@@ -1,8 +1,8 @@
 import argparse
 import tqdm
+import glob
 import json
 import numpy as np
-import os
 
 from collections import defaultdict
 from os import path as osp
@@ -20,16 +20,12 @@ parser.add_argument('json_dir')
 args = parser.parse_args()
 
 json_dir = args.json_dir
-json_paths = []
 
 # Gather paths to all json files
-for root, dirs, files in os.walk(json_dir):
-    for f in files:
-        if f.endswith('.json'):
-            json_paths.append(osp.join(root, f))
+json_paths = glob.glob(osp.join(json_dir, '*.json'))
 
 
-# Recursive defaultdict
+# Recursive defaultdict of defaultdicts
 def rec_dd():
     return defaultdict(rec_dd)
 
@@ -44,14 +40,8 @@ for j_path in tqdm.tqdm(json_paths):
     with open(j_path) as f:
         stats = json.load(f)
 
-    j_key = osp.abspath(j_path).split('/jsons/')[-1]
-    exp_type = j_key.split('/')[0]  # either social or pointnav
-    model_name_seed = osp.basename(osp.dirname(j_key))
-    model_name = model_name_seed.split('_seed')[0]
-    seed = model_name_seed[len(model_name) + 1:]
-    ckpt_index = int(j_key.split('_')[-1].split('.')[0])
-
-    all_j_data[exp_type][model_name][seed][ckpt_index] = stats
+    ckpt_id = int(j_path.split('_')[-1].split('.')[0])
+    all_j_data[ckpt_id] = stats
 
 
 # Get mean value filtered by split
@@ -62,34 +52,16 @@ def get_mean_val(key, stats, eps):
     ])
 
 
-# Find best checkpoint for each seed
-print('Determining best checkpoints...')
-best_ckpts = rec_dd()
-parse_count = 0
-for exp_type, v in all_j_data.items():
-    for model_name, vv in v.items():
-        for seed, vvv in vv.items():
-            ckpt_stats = [
-                (
-                    get_mean_val('success', stats, val_eps),
-                    ckpt_index
-                )
-                for ckpt_index, stats in vvv.items()
-            ]
-            best_ckpts[exp_type][model_name][seed] = max(ckpt_stats)[1]
-            parse_count += len(vvv)
-            print(f'Parsed {parse_count}/{len(json_paths)}\r', end='')
-print('')
+# Identify best checkpoint
+all_succ_vals = [
+    (get_mean_val('success', stats, val_eps), ckpt_id)
+    for ckpt_id, stats in all_j_data.items()
+]
 
+best_ckpt_id = max(all_succ_vals)[1]
 
-# Get metrics on test split for best checkpoints
+# Use best checkpoint to calculate avg succ on test set
+test_set_succ = get_mean_val('success', all_j_data[best_ckpt_id], test_eps)
 
-#
-# # Filter best results
-#
-#     # Iterate through episodes
-#     for k,v in all_episode_stats.items():
-#         if k == 'agg_stats':
-#             continue
-#
-#
+print(f'Best ckpt ID: {best_ckpt_id}')
+print(f'Test set avg succ: {test_set_succ*100:.2f}%')
