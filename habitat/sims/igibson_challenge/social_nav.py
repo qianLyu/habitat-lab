@@ -37,10 +37,6 @@ import magnum as mn
 import math
 import numpy as np
 
-MAX_ANG = np.deg2rad(90)
-MAX_LIN = 0.50
-TIME_STEP = 0.1
-
 @registry.register_simulator(name="iGibsonSocialNav")
 class iGibsonSocialNav(HabitatSim):
     def __init__(self, config: Config) -> None:
@@ -55,6 +51,12 @@ class iGibsonSocialNav(HabitatSim):
         self.social_nav = True
         self.interactive_nav = False
         
+        # People params
+        self.people_mask = config.get('PEOPLE_MASK', False)
+        self.lin_speed = config.PEOPLE_LIN_SPEED
+        self.ang_speed = np.deg2rad(config.PEOPLE_ANG_SPEED)
+        self.time_step = config.TIME_STEP
+
 
     def reset_people(self):
         agent_position = self.get_agent_state().position
@@ -114,7 +116,10 @@ class iGibsonSocialNav(HabitatSim):
             spf = ShortestPathFollowerv2(
                 sim=self,
                 object_id=person_id,
-                waypoints=waypoints
+                waypoints=waypoints,
+                lin_speed=self.lin_speed,
+                ang_speed=self.ang_speed,
+                time_step=self.time_step,
             )
             self.people.append(spf)
 
@@ -170,7 +175,10 @@ class ShortestPathFollowerv2:
         self,
         sim,
         object_id,
-        waypoints
+        waypoints,
+        lin_speed,
+        ang_speed,
+        time_step,
     ):
         self._sim = sim
         self.object_id = object_id
@@ -186,9 +194,13 @@ class ShortestPathFollowerv2:
         self.done_turning = False
         self.current_position = waypoints[0]
 
-        self.max_linear_vel = np.random.rand()*(0.1)+0.1
+        # People params
+        self.lin_speed = lin_speed
+        self.ang_speed = ang_speed
+        self.time_step = time_step
+        self.max_linear_vel = np.random.rand()*(0.1)+self.lin_speed-0.1
 
-    def step(self, time_step=TIME_STEP):
+    def step(self):
         waypoint_idx = self.next_waypoint_idx % len(self.waypoints)
         waypoint = np.array(self.waypoints[waypoint_idx])
 
@@ -211,11 +223,11 @@ class ShortestPathFollowerv2:
             direction = 1 if theta_diff < 0 else -1
 
             # If next turn would normally overshoot, turn just the right amount
-            if MAX_ANG*time_step*1.2 >= abs(theta_diff):
-                angular_velocity = -theta_diff / time_step
+            if self.ang_speed*self.time_step*1.2 >= abs(theta_diff):
+                angular_velocity = -theta_diff / self.time_step
                 self.done_turning = True
             else:
-                angular_velocity = MAX_ANG*direction
+                angular_velocity = self.ang_speed*direction
 
             self.vel_control.linear_velocity = np.zeros(3)
             self.vel_control.angular_velocity = np.array([
@@ -228,8 +240,8 @@ class ShortestPathFollowerv2:
             distance = np.sqrt(
                 (translation[0]-waypoint[0])**2+(translation[2]-waypoint[2])**2
             )
-            if self.max_linear_vel*time_step*1.2 >= distance:
-                linear_velocity = distance / time_step
+            if self.max_linear_vel*self.time_step*1.2 >= distance:
+                linear_velocity = distance / self.time_step
                 self.done_turning = False
                 self.next_waypoint_idx += 1
             else:
@@ -241,11 +253,11 @@ class ShortestPathFollowerv2:
             ])
 
         rigid_state = habitat_sim.bindings.RigidState(
-            mn_quat, 
+            mn_quat,
             translation
         )
         rigid_state = self.vel_control.integrate_transform(
-            time_step, rigid_state
+            self.time_step, rigid_state
         )
 
         self._sim.set_translation(rigid_state.translation, self.object_id)

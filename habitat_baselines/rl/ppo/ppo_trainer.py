@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import contextlib
+import glob
 import os
 import random
 import time
@@ -941,6 +942,15 @@ class PPOTrainer(BaseRLTrainer):
         if self._is_distributed:
             raise RuntimeError("Evaluation does not support distributed mode")
 
+        # Skip this checkpoint if a json result file for it already exists
+        if self.config.JSON_DIR != '':
+            json_path = os.path.join(
+                self.config.JSON_DIR,
+                f"{os.path.basename(checkpoint_path[:-4]).replace('.', '_')}.json",
+            )
+            if os.path.isfile(json_path):
+                return
+
         # Map location CPU is almost always better than mapping to a CUDA device.
         ckpt_dict = self.load_checkpoint(checkpoint_path, map_location="cpu")
 
@@ -1217,10 +1227,6 @@ class PPOTrainer(BaseRLTrainer):
         json_dir = self.config.JSON_DIR
         if json_dir != '':
             os.makedirs(json_dir, exist_ok=True)
-            json_path = os.path.join(
-                json_dir,
-                f"{os.path.basename(checkpoint_path[:-4]).replace('.','_')}.json",
-            )
             with open(json_path, 'w') as f:
                 json.dump(all_episode_stats, f)
 
@@ -1235,3 +1241,10 @@ class PPOTrainer(BaseRLTrainer):
             writer.add_scalars("eval_metrics", metrics, step_id)
 
         self.envs.close()
+
+        # End the script when all checkpoints have been evaluated
+        if len(
+            glob.glob(os.path.join(json_dir, '*.json'))
+        ) == self.config.NUM_CHECKPOINTS:
+            exit()
+
