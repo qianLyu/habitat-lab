@@ -122,7 +122,8 @@ class BaseTrainer:
                         current_ckpt = poll_checkpoint_folder(
                             self.config.EVAL_CKPT_PATH_DIR, prev_ckpt_ind
                         )
-                        time.sleep(2)  # sleep for 2 secs before polling again
+                        if current_ckpt is None:
+                            time.sleep(2)  # sleep for 2 secs before polling again
                     logger.info(f"=======current_ckpt: {current_ckpt}=======")
                     prev_ckpt_ind += 1
                     self._eval_checkpoint(
@@ -215,11 +216,7 @@ class BaseRLTrainer(BaseTrainer):
         needs_checkpoint = False
         if self.config.NUM_CHECKPOINTS != -1:
             checkpoint_every = 1 / self.config.NUM_CHECKPOINTS
-            print('ckpt stuff')
-            print(
-                self._last_checkpoint_percent + checkpoint_every,
-                self.percent_done()
-            )
+
             if (
                 self._last_checkpoint_percent + checkpoint_every
                 < self.percent_done()

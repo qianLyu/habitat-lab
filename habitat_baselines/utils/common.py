@@ -258,25 +258,25 @@ def poll_checkpoint_folder(
     models_paths = list(
         filter(os.path.isfile, glob.glob(checkpoint_folder + "/*"))
     )
-    # models_paths.sort(key=os.path.getmtime)
-    # ind = previous_ckpt_ind + 1
-    # if ind < len(models_paths):
-    #     return models_paths[ind]
-    # return None
-    models_paths = list(
-        filter(
-            lambda x: not os.path.isfile(x+'.done'), 
-            glob.glob(os.path.join(checkpoint_folder, '*.pth'))
-        )
-    )
-    models_paths = sorted(models_paths, key=lambda x: int(x.split('.')[-2]))
-    if len(models_paths) > 0:
-        with open(models_paths[0]+'.done','w') as f:
-            pass
-        return models_paths[0]
-    else:
-        exit()
+    models_paths.sort(key=os.path.getmtime)
+    ind = previous_ckpt_ind + 1
+    if ind < len(models_paths):
+        return models_paths[ind]
     return None
+    # models_paths = list(
+    #     filter(
+    #         lambda x: not os.path.isfile(x+'.done'),
+    #         glob.glob(os.path.join(checkpoint_folder, '*.pth'))
+    #     )
+    # )
+    # models_paths = sorted(models_paths, key=lambda x: int(x.split('.')[-2]))
+    # if len(models_paths) > 0:
+    #     # with open(models_paths[0]+'.done','w') as f:
+    #     #     pass
+    #     return models_paths[0]
+    # else:
+    #     exit()
+    # return None
 
 
 def generate_video(
@@ -535,6 +535,7 @@ def delete_folder(path: str) -> None:
 
 def action_to_velocity_control(
     action: torch.Tensor,
+    allow_sliding: bool = None,
     num_steps: float = -1,
 ) -> Union[int, str, Dict[str, Any]]:
     lin_vel, ang_vel = torch.clip(action, min=-1, max=1)
@@ -542,9 +543,9 @@ def action_to_velocity_control(
         "action": {
             "action": "VELOCITY_CONTROL",
             "action_args": {
-                "linear_velocity": lin_vel.item(),
-                "angular_velocity": ang_vel.item(),
-                "allow_sliding": True,
+                "lin_vel": lin_vel.item(),
+                "ang_vel": ang_vel.item(),
+                "allow_sliding": allow_sliding,
             },
         }
     }

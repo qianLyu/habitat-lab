@@ -81,6 +81,7 @@ ACTIONS.VELOCITY_CONTROL.MIN_ABS_LIN_SPEED = 0.025  # meters per sec
 ACTIONS.VELOCITY_CONTROL.MIN_ABS_ANG_SPEED = 1.0  # deg per sec
 ACTIONS.VELOCITY_CONTROL.TIME_STEP = 1.0  # seconds
 ACTIONS.VELOCITY_CONTROL.DISCRETE_ACTIONS = []
+ACTIONS.VELOCITY_CONTROL.MUST_CALL_STOP = True
 
 _C.TASK.ACTIONS = ACTIONS
 # -----------------------------------------------------------------------------
@@ -313,6 +314,9 @@ _C.SIMULATOR.HABITAT_SIM_V0.PHYSICS_CONFIG_FILE = (
     "./data/default.physics_config.json"
 )
 _C.SIMULATOR.NUM_PEOPLE = 1
+_C.SIMULATOR.PEOPLE_LIN_SPEED = 0.0
+_C.SIMULATOR.PEOPLE_ANG_SPEED = 0.0
+_C.SIMULATOR.TIME_STEP = 0.0
 # -----------------------------------------------------------------------------
 # PYROBOT
 # -----------------------------------------------------------------------------
