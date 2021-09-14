@@ -320,7 +320,7 @@ class PointNavResNetNet(Net):
             self.visual_fc = nn.Sequential(
                 nn.Flatten(),
                 nn.Linear(
-                    4560, hidden_size
+                    7680, hidden_size
                     # np.prod(self.visual_encoder.output_shape), hidden_size
                 ),
                 nn.ReLU(True),

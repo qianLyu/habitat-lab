@@ -50,10 +50,13 @@ all_succ_vals = [
     for ckpt_id, stats in all_j_data.items()
 ]
 
+#print(all_succ_vals)
 best_ckpt_id = max(all_succ_vals)[1]
 
+# print(all_j_data[best_ckpt_id])
 # Use best checkpoint to calculate avg succ on test set
 test_set_succ = get_mean_val('success', all_j_data[best_ckpt_id], test_eps)
 
+# print(val_eps, test_eps)
 print(f'Best ckpt ID: {best_ckpt_id}')
 print(f'Test set avg succ: {test_set_succ*100:.2f}%')
